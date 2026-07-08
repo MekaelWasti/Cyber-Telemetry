@@ -1,0 +1,11 @@
+Metric Suite to expand to later
+
+Method score:
+raw_session_stats_knn
+density_peak_score
+compact_isolated_cluster_score
+
+Representation diagnostic:
+malicious_knn_enrichment
+malicious_neighbor_purity
+label_homophily_at_k
