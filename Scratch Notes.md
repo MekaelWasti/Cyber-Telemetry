@@ -1,33 +1,36 @@
 ## Metric Suite to expand to later
 
 #### Triage Method score:
+
 These are label-free scores that could actually rank sessions before you know labels:
+
 - raw_session_stats_knn
 - density_peak_score
 - compact_isolated_cluster_score
 
 #### Representation diagnostic:
+
 These use labels after the representation/neighbors are fixed:
+
 - malicious_knn_enrichment
 - malicious_neighbor_purity
 - label_homophily_at_k
 
 If I had to pick the core three:
 
-```malicious_neighbor_purity_at_15``
+``malicious_neighbor_purity_at_15`
 
-```malicious_mean_neighbor_rank``
+``malicious_mean_neighbor_rank`
 
-```malicious_cluster_fragmentation``
+``malicious_cluster_fragmentation`
 
 Why those three:
 
-```malicious_neighbor_purity_at_15```: “When I stand on a malicious session, how many nearby sessions are also malicious?” This is closest to what your enrichment diagnostic is trying to capture.
+`malicious_neighbor_purity_at_15`: “When I stand on a malicious session, how many nearby sessions are also malicious?” This is closest to what your enrichment diagnostic is trying to capture.
 
-```malicious_mean_neighbor_rank```: “How close are malicious sessions to each other relative to all sessions?” This avoids over-fixating on one arbitrary k.
+`malicious_mean_neighbor_rank`: “How close are malicious sessions to each other relative to all sessions?” This avoids over-fixating on one arbitrary k.
 
-```malicious_cluster_fragmentation```: “Are malicious sessions in one coherent neighborhood, or scattered across unrelated regions?” Very helpful for deciding whether steering/few-shot retrieval is promising.
-
+`malicious_cluster_fragmentation`: “Are malicious sessions in one coherent neighborhood, or scattered across unrelated regions?” Very helpful for deciding whether steering/few-shot retrieval is promising.
 
 average_precision
 reviews_to_first_malicious
@@ -39,8 +42,6 @@ method | AP | reviews_to_first | recall@25 | recall@50 | ...
 
 Table 2: Representation diagnostics
 representation | malicious_neighbor_purity@15 | enrichment_vs_random | malicious_mean_neighbor_rank | fragmentation
-
-
 
 ---
 
@@ -69,11 +70,13 @@ Chat
 > Saved outputs are still useful: they include the dev slice manifest, the strawman score distribution, malicious-session rows, and the graph build summary. I’m extracting just the plain-text parts now so the final assessment can cite actual notebook evidence without dumping the giant HTML plot output.
 >
 > I’ve got enough to give you a clean answer now. Short version before the full notes: it has the bones of the v0 baseline, but I would not treat this notebook as a defensible baseline yet.
+
 </details>
 
 Short answer: not yet. It has good scaffolding, but I would not treat the current notebook as a defensible v0 baseline under [SIMPLIFIED_PLAN.md](./SIMPLIFIED_PLAN.md:5).
 
 **Findings**
+
 - The pipeline entry point is still a stub. `run_discovery_pipeline` returns `None` for `session_table`, `baseline_scores`, `graph_scores`, and `metric_summary`, while the plan asks for a real `run_minimal_discovery_pipeline` result bundle. See [notebook](<./Notebooks/Graph Triage Baseline v0.ipynb:16469>) and [plan](./SIMPLIFIED_PLAN.md:92).
 
 - There is no v0 graph-vs-strawman result yet. The notebook defines raw kNN scoring, but does not compute `average_precision`, `reviews_to_first_malicious`, random expectation, recall/precision budgets, graph embeddings, graph kNN scores, or seed mean/std. Those are the central acceptance criteria in [SIMPLIFIED_PLAN.md](./SIMPLIFIED_PLAN.md:182).
@@ -101,9 +104,10 @@ I could not execute the notebook cleanly here: `jupyter` is not installed, and t
 <details><summary>1 previous message</summary>
 
 > Got it. I’ll look at the updated entry point first so I can separate “raw baseline is shaping up” from “graph v0 still pending,” then I’ll answer the label/session/manifest questions directly.
+
 </details>
 
-Yep, that framing makes sense: for the *raw baseline only*, the new entry point is closer. I’d think of the graph as the next method plugin, but the evaluation session IDs should be shared.
+Yep, that framing makes sense: for the _raw baseline only_, the new entry point is closer. I’d think of the graph as the next method plugin, but the evaluation session IDs should be shared.
 
 **Labels / Leakage**
 You are exactly right that you must check labels at some point. The clean boundary is:
@@ -582,7 +586,6 @@ That is a strong story. It’s not trying to smuggle labels into the detector; i
 > </details>
 >
 > - Ran `jq empty "Notebooks/Graph Triage Baseline v0.ipynb"`
->
 > - Ran `git diff -- "Notebooks/Graph Triage Baseline v0.ipynb"`
 >
 > </details>
@@ -614,11 +617,13 @@ That is a strong story. It’s not trying to smuggle labels into the detector; i
 > - Ran `git diff --stat -- "Notebooks/Graph Triage Baseline v0.ipynb"`
 >
 > </details>
+
 </details>
 
 Picked and wired in the strongest single diagnostic for now: `malicious_neighbor_purity_diagnostic` in [Graph Triage Baseline v0.ipynb](<./Notebooks/Graph Triage Baseline v0.ipynb:24822>).
 
 What changed:
+
 - Replaced the old distance-weighted enrichment “score” with a label-aware representation diagnostic.
 - The raw anomaly score remains `raw_session_stats_knn`.
 - The diagnostic now reports:
@@ -646,6 +651,7 @@ I did not rerun the notebook, so some saved outputs may still show the old `anom
 >     .dataframe thead th {
 >         text-align: right;
 >     }
+>
 > </style>
 > <table border="1" class="dataframe">
 >   <thead>
@@ -712,6 +718,7 @@ I’d keep this diagnostic. It’s doing real work.
 For the **raw baseline**, you’re close. I’d say what’s left is mostly turning it from “good exploratory notebook” into “paper-ready baseline artifact.”
 
 **Must-Have Left**
+
 1. Add triage metrics for `raw_session_stats_knn`:
    - `average_precision`
    - `reviews_to_first_malicious`
@@ -725,6 +732,7 @@ For the **raw baseline**, you’re close. I’d say what’s left is mostly turn
    - It gives you a calibration point for reviews-to-first and recall@K.
 
 3. Return clean tables from the pipeline:
+
    ```python
    {
        "slice_manifest": ...,
@@ -755,12 +763,14 @@ For the **raw baseline**, you’re close. I’d say what’s left is mostly turn
    - `malicious_neighbor_purity_diagnostic` uses labels and is reported as diagnostic.
 
 **Nice But Not Required Yet**
+
 - Holdout viability check: confirm test split has malicious sessions before making claims.
 - Determinism check: run raw baseline twice and confirm same scores.
 - Clean `metric_eval` so it returns tables rather than displaying as its main behavior.
 - Remove old exploratory UMAP/datamapplot from the baseline reporting path, or keep it clearly marked as exploration.
 
 **Not Needed For This Raw Baseline**
+
 - Graph score.
 - Graph sessionization.
 - Density peak score.
@@ -809,6 +819,7 @@ That’s a solid v0 raw baseline.
 > - Ran `jq -r '.cells[].source[]?' "Notebooks/Graph Triage Baseline v0.ipynb" | rg -n 'bad_user|process_started_seconds|process_stop_seconds|first_seen|last_seen|_first_seen|_last_seen|file_id|agent_id|hostname|user_name|token_elevation_type|duration_seconds'`
 >
 > </details>
+
 </details>
 
 I looked over the raw session creation path. I would **not fully assure it yet**. The structure is mostly clean, but there are a couple of likely leak/proxy columns to tighten.
@@ -857,9 +868,7 @@ def strawman_numeric_columns(sessionized_df):
 
 Identity note: if the diagnostic is strong after this cleanup, I’d be more comfortable calling it a real behavioral/session-stat clustering result. If it drops a lot, then the current clustering was probably helped by label-like or chronology proxies. Still useful to know, just a different interpretation.
 
-
 can you try it without changing my notebook
-
 
 I tried it without changing the notebook.
 
@@ -906,3 +915,842 @@ process_stop_seconds_std
 ```
 
 Identity-wise: I don’t see explicit identity leakage in the raw score path. `user_name`/`hostname` are used for sessionization, but not as features; numeric identity encodings like `num_user_name`, `num_process_name`, hashes, etc. are excluded. So I’d call this a good clustering diagnostic, not just identity leakage, with the caveat that the sessionization itself is identity-bounded by design.
+
+---
+
+# catch up on the MASTER_PLAN.md and this
+
+> catch up on the [MASTER_PLAN.md](MASTER_PLAN.md) and this
+>
+> User context
+>
+> Attachments:
+>
+> - I'm working on a project. My project details are in this directory. The main no…: `~/.codex/attachments/ff9c640d-8ea9-46d8-9b85-16af37b23d21/pasted-text.txt`
+
+<details><summary>2 previous messages</summary>
+
+> I’ll read the master plan and the attached context, then reconcile them with the currently open planning notes so I can give you a crisp project-state summary.
+>
+> The attached thread clarifies the current interpretation: ignore the discarded telemetry graph, freeze the strawman sessions as the review unit, and keep methods label-free while using labels only for post-hoc diagnostics/evaluation. I’m checking the notebook’s present cells against that handoff so I don’t inherit stale assumptions.
+
+</details>
+
+Caught up. My current working understanding is:
+
+- The strawman sessionizer defines the canonical review unit: sessions.
+- The frozen dev slice is the development dataset; it does not itself define review units.
+- The previous telemetry graph is discarded, so its sparsity and repair phases are currently irrelevant.
+- All method scores must be label-free.
+- Labels may be used afterward for metrics and behavioral diagnostics—such as malicious-neighbor purity, conductance, and spectral energy.
+- Any choice made using those diagnostics becomes development-label-informed and must be frozen before holdout evaluation.
+- The immediate next implementation is the session-similarity graph and fixed GSP filter bank using the existing session feature matrix and raw score.
+- The signal regime is an empirical diagnosis, not a prior assumption. Filter behavior plus label-aware audits and matched nulls provide evidence for smooth, contrastive, multiscale, or absent relational signal.
+- The later telemetry graph should be designed fresh and audited before structural statistics, Node2Vec, or GraphSAGE.
+
+One nuance I’ll preserve: a winning filter channel is evidence about the useful transformation, but the regime claim should also be supported by energy/conductance diagnostics and null comparisons—not inferred from ranking performance alone.
+
+No files changed.
+
+> okay thanks. What does that mean the filter bank thing, can you explain that. I have session feature matrix as in my table of sessions which is a raw session stats feature matrix whatever. I don't have a graph yet, unless you mean the knn is the similarity graph
+
+Yes—the kNN structure is the similarity graph.
+
+Your current pipeline already computes distances between session feature vectors. Instead of using those neighbors only to produce one anomaly score, the filter-bank approach treats them as graph edges:
+
+```text
+raw telemetry
+    ↓
+session feature matrix X
+    ↓
+k-nearest-neighbor graph between sessions
+    ↓
+initial score s₀ for every session
+    ↓
+several fixed transformations (“filters”) of s₀
+```
+
+Each node is one session. An edge means “these sessions are similar in raw session-stat space.” This is a session-similarity graph, distinct from the heterogeneous telemetry graph you may build later.
+
+If \(P\) is the row-normalized neighbor matrix, then:
+
+- \(s_0\): original kNN anomaly score.
+- \(Ps_0\): average score among a session’s neighbors. Tests whether anomaly evidence is locally shared.
+- \((I-P)s_0 = s_0-Ps_0\): difference from neighbors. Tests whether a session is locally surprising.
+- \(Ps_0-P^2s_0\): difference between one-hop and two-hop neighborhoods. Tests intermediate-scale/local-boundary structure.
+- Restart diffusion: repeatedly spreads scores through nearby sessions while retaining some original score. Tests whether evidence becomes stronger over several hops.
+
+It is called a “filter bank” because you apply several fixed graph transformations to the same signal \(s_0\), analogous to examining an image with smoothing, edge-detection, and scale-specific filters.
+
+The important distinction is:
+
+- \(X\) constructs the similarity graph.
+- \(s_0\) is a signal located on its session nodes.
+- The filters test how that signal behaves relationally.
+
+One caveat: because both the graph and \(s_0\) come from the same feature space, this is a geometry baseline, not yet evidence that explicit telemetry relations help. That comes later with the heterogeneous telemetry graph.
+
+> so this filter bank, I would apply to all graph methods I do later?
+
+Not automatically.
+
+The filter bank is initially a standalone baseline on the session-similarity graph. It answers:
+
+> Does relationally transforming the raw anomaly score reveal signal that the raw score misses?
+
+Later graph methods—structural statistics, Node2Vec, GraphSAGE—primarily produce new session representations. First evaluate each cleanly:
+
+```text
+representation → common scoring rule → ranking metrics
+```
+
+Only afterward, if justified, you can apply the same general filtering idea:
+
+```text
+method’s initial session scores → chosen session graph → graph filter → amplified scores
+```
+
+Keep these two stages separate:
+
+1. Representation comparison
+   Evaluate raw features, structural features, Node2Vec, and GraphSAGE without amplification. This determines where useful signal exists.
+
+2. Conditional amplification
+   Apply a filter only when diagnostics support it—for example:
+   - Smooth/clustered signal → neighbor averaging or restart diffusion
+   - Contrastive signal → residual/high-pass filter
+   - Intermediate-scale signal → one-hop versus two-hop filter
+   - No graph signal → no filtering
+
+Also, you must explicitly choose which graph performs the filtering. It could be:
+
+- the raw-feature session kNN graph,
+- a kNN graph built from a learned representation, or
+- a session-level graph derived from telemetry relations.
+
+Those are different hypotheses and should not be mixed casually.
+
+So the short answer is: use the filter bank now as a basic method and diagnostic; later, apply a preselected filter to other methods only as a separate amplification experiment—not as a mandatory part of every graph method.
+
+> okay so why are we doing it on the session similarity graph
+
+Because it is the simplest graph you already implicitly have: your kNN scorer finds each session’s nearest neighbors, and those neighbor relationships form a session-similarity graph.
+
+It gives us a cheap first question:
+
+> Does the local geometry of the raw session features contain useful information that the original point-anomaly score fails to use?
+
+For example, a malicious session may not be individually unusual, but it may belong to a suspicious group of mutually similar sessions. Filtering can expose that group-level pattern.
+
+However, this has strict limits:
+
+- It tests similarity in raw feature space—not telemetry relationships.
+- The graph and original score come from the same features, so results may be partly redundant.
+- Any “smooth versus contrastive” diagnosis applies only to this similarity graph.
+- It cannot determine the signal regime of a future heterogeneous telemetry graph.
+
+So we are doing it as a low-cost geometry baseline and proof of the score-amplification concept. It is not the project’s main graph, and it is not mandatory. If your research question is specifically whether explicit telemetry relations carry signal, the heterogeneous graph remains the important experiment.
+
+> okay so this is what I do now? How do I do it
+
+<details><summary>2 previous messages</summary>
+
+> Yes—this is a sensible next baseline. I’ll map it directly onto your notebook’s existing feature and scoring variables so the implementation is concrete.
+>
+> <details><summary>Ran a command</summary>
+>
+> - Ran `$nb = Get-Content -Raw -Encoding UTF8 'Notebooks\Graph Triage Baseline v0.ipynb' | ConvertFrom-Json; foreach ($i in 12,13,15,21,23) { "===== CELL $i ====="; ($nb.cells[$i].source -join '') }`
+>
+> </details>
+
+</details>
+
+Yes. Implement it as a new baseline section after sessionization.
+
+### 1. Build the session-similarity graph
+
+Use the scaled session feature matrix. Each session becomes a node; kNN relationships become edges.
+
+```python
+from scipy import sparse
+
+def build_session_knn_operator(X, k=15):
+    X = np.asarray(X, dtype=np.float32)
+    n = len(X)
+    effective_k = min(k, n - 1)
+
+    _, neighbors = cKDTree(X).query(
+        X,
+        k=effective_k + 1,
+        workers=-1,
+    )
+    neighbors = neighbors[:, 1:]  # remove self
+
+    rows = np.repeat(np.arange(n), effective_k)
+    cols = neighbors.reshape(-1)
+    values = np.ones(len(rows), dtype=float)
+
+    # Binary directed kNN adjacency
+    A = sparse.csr_matrix((values, (rows, cols)), shape=(n, n))
+
+    # Symmetric union graph: i--j if either selected the other
+    A = A.maximum(A.T)
+    A.setdiag(0)
+    A.eliminate_zeros()
+
+    # Row-normalized propagation operator P = D^-1 A
+    degree = np.asarray(A.sum(axis=1)).ravel()
+    inverse_degree = np.divide(
+        1.0,
+        degree,
+        out=np.zeros_like(degree),
+        where=degree > 0,
+    )
+    P = sparse.diags(inverse_degree) @ A
+
+    return A, P
+```
+
+Binary edges are a good first version because they avoid introducing another distance-weighting parameter.
+
+### 2. Apply the filter bank
+
+```python
+def session_score_filter_bank(s0, P, restart_alpha=0.5, steps=3):
+    s0 = np.asarray(s0, dtype=float)
+
+    p1 = np.asarray(P @ s0).ravel()
+    p2 = np.asarray(P @ p1).ravel()
+
+    # Restart diffusion: preserve original evidence while propagating locally
+    diffusion = s0.copy()
+    for _ in range(steps):
+        diffusion = (
+            restart_alpha * s0
+            + (1.0 - restart_alpha) * np.asarray(P @ diffusion).ravel()
+        )
+
+    return {
+        "raw_knn_distance": s0,
+        "neighbor_support": p1,
+        "local_residual": s0 - p1,
+        "one_vs_two_hop": p1 - p2,
+        "restart_diffusion": diffusion,
+    }
+```
+
+### 3. Run it on your existing session table
+
+```python
+sessionized_df, sessions = make_strawman_sessions(dev_df)
+session_table = build_raw_session_stats(sessionized_df)
+
+feature_columns = [
+    c for c in session_table.columns
+    if c not in {"session_id", "label"}
+]
+
+X = StandardScaler().fit_transform(session_table[feature_columns])
+
+s0 = knn_distance_anomaly_scores(X, k=15)
+A, P = build_session_knn_operator(X, k=15)
+filter_scores = session_score_filter_bank(s0, P)
+
+y_true = (
+    session_table["label"]
+    .map({"benign": 0, "malicious": 1})
+    .to_numpy()
+)
+
+filter_results = {
+    name: evaluate_precomputed_scores(y_true, scores)
+    for name, scores in filter_scores.items()
+}
+
+filter_summary = metric_summary_from_method_results(filter_results)
+filter_summary
+```
+
+Interpret the rows as:
+
+- `raw_knn_distance`: original baseline
+- `neighbor_support`: are high scores supported by similar sessions?
+- `local_residual`: is a session more anomalous than its neighbors?
+- `one_vs_two_hop`: is evidence concentrated at an intermediate/local scale?
+- `restart_diffusion`: does controlled propagation improve retrieval?
+
+This is the first mechanical version. Do not select a “winner” permanently yet. First confirm the code, inspect the metrics, and then add label-shuffle and graph-null diagnostics before making a signal-regime claim.
+
+> <div>
+> <style scoped>
+>     .dataframe tbody tr th:only-of-type {
+>         vertical-align: middle;
+>     }
+>
+>     .dataframe tbody tr th {
+>         vertical-align: top;
+>     }
+>
+>     .dataframe thead th {
+>         text-align: right;
+>     }
+>
+> </style>
+> <table border="1" class="dataframe">
+>   <thead>
+>     <tr style="text-align: right;">
+>       <th></th>
+>       <th>method</th>
+>       <th>average_precision</th>
+>       <th>reviews_to_first_malicious</th>
+>       <th>random_expected_reviews_to_first</th>
+>       <th>found_at_25</th>
+>       <th>recall_at_25</th>
+>       <th>precision_at_25</th>
+>       <th>found_at_50</th>
+>       <th>recall_at_50</th>
+>       <th>precision_at_50</th>
+>       <th>found_at_100</th>
+>       <th>recall_at_100</th>
+>       <th>precision_at_100</th>
+>       <th>found_at_250</th>
+>       <th>recall_at_250</th>
+>       <th>precision_at_250</th>
+>     </tr>
+>   </thead>
+>   <tbody>
+>     <tr>
+>       <th>0</th>
+>       <td>raw_knn_distance</td>
+>       <td>0.016299</td>
+>       <td>128</td>
+>       <td>72.9</td>
+>       <td>0</td>
+>       <td>0.0</td>
+>       <td>0.0</td>
+>       <td>0</td>
+>       <td>0.0</td>
+>       <td>0.0</td>
+>       <td>0</td>
+>       <td>0.000000</td>
+>       <td>0.00</td>
+>       <td>2</td>
+>       <td>0.105263</td>
+>       <td>0.008</td>
+>     </tr>
+>     <tr>
+>       <th>1</th>
+>       <td>neighbour-support</td>
+>       <td>0.022011</td>
+>       <td>120</td>
+>       <td>72.9</td>
+>       <td>0</td>
+>       <td>0.0</td>
+>       <td>0.0</td>
+>       <td>0</td>
+>       <td>0.0</td>
+>       <td>0.0</td>
+>       <td>0</td>
+>       <td>0.000000</td>
+>       <td>0.00</td>
+>       <td>7</td>
+>       <td>0.368421</td>
+>       <td>0.028</td>
+>     </tr>
+>     <tr>
+>       <th>2</th>
+>       <td>local_residual</td>
+>       <td>0.009252</td>
+>       <td>272</td>
+>       <td>72.9</td>
+>       <td>0</td>
+>       <td>0.0</td>
+>       <td>0.0</td>
+>       <td>0</td>
+>       <td>0.0</td>
+>       <td>0.0</td>
+>       <td>0</td>
+>       <td>0.000000</td>
+>       <td>0.00</td>
+>       <td>0</td>
+>       <td>0.000000</td>
+>       <td>0.000</td>
+>     </tr>
+>     <tr>
+>       <th>3</th>
+>       <td>one_vs_two_hop</td>
+>       <td>0.019823</td>
+>       <td>56</td>
+>       <td>72.9</td>
+>       <td>0</td>
+>       <td>0.0</td>
+>       <td>0.0</td>
+>       <td>0</td>
+>       <td>0.0</td>
+>       <td>0.0</td>
+>       <td>4</td>
+>       <td>0.210526</td>
+>       <td>0.04</td>
+>       <td>7</td>
+>       <td>0.368421</td>
+>       <td>0.028</td>
+>     </tr>
+>     <tr>
+>       <th>4</th>
+>       <td>restart_diffusion</td>
+>       <td>0.019326</td>
+>       <td>131</td>
+>       <td>72.9</td>
+>       <td>0</td>
+>       <td>0.0</td>
+>       <td>0.0</td>
+>       <td>0</td>
+>       <td>0.0</td>
+>       <td>0.0</td>
+>       <td>0</td>
+>       <td>0.000000</td>
+>       <td>0.00</td>
+>       <td>3</td>
+>       <td>0.157895</td>
+>       <td>0.012</td>
+>     </tr>
+>   </tbody>
+> </table>
+> </div>
+
+This is a promising but preliminary result.
+
+- There are 19 malicious sessions out of roughly 1,457, so prevalence—and random expected AP—is about 0.013.
+- `neighbour-support` has the best AP: 0.022 versus 0.016 raw, and retrieves 7/19 malicious sessions by rank 250.
+- `one_vs_two_hop` gives the best early retrieval: first malicious at rank 56 versus 128 raw and 72.9 expected randomly; it finds 4 malicious sessions by rank 100.
+- `local_residual` performs poorly, so malicious sessions do not appear individually surprising relative to their immediate neighborhoods.
+- No method finds anything in the first 50 reviews, so the overall ranking remains weak.
+
+The cautious interpretation is:
+
+> Raw-feature similarity contains some useful locally shared or scale-dependent structure that the point-anomaly score does not exploit well.
+
+It does not yet prove a smooth or multiscale signal regime. The differences could arise by chance with only 19 positives, and all filters are correlated because they use the same features and graph.
+
+Your next step should be null testing:
+
+1. Keep \(s_0\) fixed.
+2. Degree-preserving rewire the similarity graph many times.
+3. Apply the same filters to every rewired graph.
+4. Compare the real improvements in AP and recall@100/250 against the resulting null distributions.
+5. Run label permutations to establish chance metric distributions.
+6. Record that choosing `neighbour-support` or `one_vs_two_hop` from this table is development-label-informed; any selected method must be frozen before holdout.
+
+For now, the most interesting candidate is `one_vs_two_hop` for early triage and `neighbour-support` for overall retrieval—but neither is established as the winner yet.
+
+> okay and after I do null testing what should I do
+
+After null testing, close out this similarity-graph experiment and move to the actual telemetry graph.
+
+Two possible outcomes:
+
+- If the real filter beats the rewired/null graphs: retain it as the M0 geometry baseline and record which transformation appears useful.
+- If it does not: report that raw-feature neighborhood filtering adds no reliable signal and stop amplifying this graph.
+
+Then proceed:
+
+1. Build the heterogeneous telemetry graph from raw events using label-free semantic rules.
+2. Map every graph node/process back to your frozen session IDs.
+3. Audit the graph before training anything:
+   - isolates and components
+   - edge counts by relation
+   - session coverage
+   - degree distributions
+   - one/two/three-hop coverage
+4. Build typed structural-statistics session representations and evaluate them with the same kNN scorer and metrics.
+5. If graph coverage is adequate, evaluate Node2Vec, followed later by relational GraphSAGE.
+6. Compare every representation before applying amplification.
+7. Diagnose where the best representation’s signal lives—relations, hops, smoothness, roles—and only then select a matching amplification mechanism.
+8. Freeze the complete method and evaluate once on holdout.
+
+So the immediate sequence is:
+
+```text
+finish M0 null tests
+→ record its conclusion
+→ construct fresh telemetry graph
+→ audit coverage
+→ typed structural-statistics baseline
+```
+
+Do not automatically apply the current filter winner to subsequent graph methods; first determine whether those representations contain useful signal on their own.
+
+> okay can you give the null tests
+
+Use two complementary nulls:
+
+1. Label permutation: are the rankings better than chance?
+2. Degree-preserving graph rewiring: does the real similarity neighborhood matter beyond node degree?
+
+The second is the important graph-specific test.
+
+### Shared metric helpers
+
+This assumes these variables already exist:
+
+```python
+A
+s0
+filter_scores
+y_true
+```
+
+```python
+import networkx as nx
+
+NULL_METRICS = (
+    "average_precision",
+    "reviews_to_first_malicious",
+    "recall_at_100",
+    "recall_at_250",
+)
+
+METRIC_DIRECTION = {
+    "average_precision": "higher",
+    "reviews_to_first_malicious": "lower",
+    "recall_at_100": "higher",
+    "recall_at_250": "higher",
+}
+
+def compact_metrics(y_true, scores):
+    result = evaluate_precomputed_scores(y_true, scores)
+    ranking = result["ranking_at_k_metrics"]
+
+    return {
+        "average_precision": result["average_precision"],
+        "reviews_to_first_malicious": result["reviews_to_first_malicious"],
+        "recall_at_100": ranking["recall_at_100"],
+        "recall_at_250": ranking["recall_at_250"],
+    }
+
+def summarize_null(observed_scores, y_true, null_runs):
+    rows = []
+
+    for method in null_runs["method"].unique():
+        observed = compact_metrics(y_true, observed_scores[method])
+        method_null = null_runs[null_runs["method"] == method]
+
+        for metric in NULL_METRICS:
+            null_values = method_null[metric].dropna().to_numpy()
+            observed_value = observed[metric]
+
+            if METRIC_DIRECTION[metric] == "higher":
+                extreme = np.sum(null_values >= observed_value)
+            else:
+                extreme = np.sum(null_values <= observed_value)
+
+            rows.append({
+                "method": method,
+                "metric": metric,
+                "observed": observed_value,
+                "null_mean": null_values.mean(),
+                "null_median": np.median(null_values),
+                "null_95th_percentile": np.quantile(null_values, 0.95),
+                "empirical_p": (extreme + 1) / (len(null_values) + 1),
+            })
+
+    return pd.DataFrame(rows)
+```
+
+### 1. Label-permutation null
+
+This keeps every score fixed and randomly moves the 19 malicious labels.
+
+```python
+def label_permutation_null(
+    filter_scores,
+    y_true,
+    n_permutations=1000,
+    seed=42,
+):
+    rng = np.random.default_rng(seed)
+    rows = []
+
+    for permutation in range(n_permutations):
+        permuted_labels = rng.permutation(y_true)
+
+        for method, scores in filter_scores.items():
+            rows.append({
+                "replicate": permutation,
+                "method": method,
+                **compact_metrics(permuted_labels, scores),
+            })
+
+    return pd.DataFrame(rows)
+
+label_null_runs = label_permutation_null(
+    filter_scores,
+    y_true,
+    n_permutations=1000,
+)
+
+label_null_summary = summarize_null(
+    filter_scores,
+    y_true,
+    label_null_runs,
+)
+
+label_null_summary
+```
+
+This tests whether each ranking is associated with the malicious labels beyond chance. It does not prove that the graph caused the improvement.
+
+### 2. Degree-preserving graph-rewiring null
+
+This keeps:
+
+- the same nodes,
+- the same degree of every node,
+- the same initial score \(s_0\),
+- the same filter parameters,
+
+but randomizes which sessions are connected.
+
+```python
+def row_normalize_adjacency(A):
+    degree = np.asarray(A.sum(axis=1)).ravel()
+
+    inverse_degree = np.divide(
+        1.0,
+        degree,
+        out=np.zeros_like(degree, dtype=float),
+        where=degree > 0,
+    )
+
+    return sparse.diags(inverse_degree) @ A
+
+def degree_preserving_rewire(
+    A,
+    seed,
+    swaps_per_edge=5,
+):
+    binary_A = (A > 0).astype(np.int8)
+
+    G = nx.from_scipy_sparse_array(
+        binary_A,
+        create_using=nx.Graph,
+    )
+
+    rewired = G.copy()
+    n_edges = rewired.number_of_edges()
+    n_swaps = swaps_per_edge * n_edges
+
+    nx.double_edge_swap(
+        rewired,
+        nswap=n_swaps,
+        max_tries=20 * n_swaps,
+        seed=seed,
+    )
+
+    A_rewired = nx.to_scipy_sparse_array(
+        rewired,
+        nodelist=np.arange(A.shape[0]),
+        format="csr",
+        dtype=float,
+    )
+
+    # Confirm that every node retained its degree.
+    original_degree = np.asarray(A.sum(axis=1)).ravel()
+    rewired_degree = np.asarray(A_rewired.sum(axis=1)).ravel()
+    assert np.array_equal(original_degree, rewired_degree)
+
+    return A_rewired
+
+def graph_rewiring_null(
+    A,
+    s0,
+    y_true,
+    n_rewirings=200,
+    seed=42,
+):
+    rng = np.random.default_rng(seed)
+    rows = []
+
+    for replicate in range(n_rewirings):
+        rewire_seed = int(rng.integers(0, 2**31 - 1))
+
+        A_null = degree_preserving_rewire(
+            A,
+            seed=rewire_seed,
+            swaps_per_edge=5,
+        )
+        P_null = row_normalize_adjacency(A_null)
+
+        null_scores = session_score_filter_bank(
+            s0,
+            P_null,
+            restart_alpha=0.5,
+            steps=3,
+        )
+
+        for method, scores in null_scores.items():
+            # The raw score does not depend on graph edges.
+            if method == "raw_knn_distance":
+                continue
+
+            rows.append({
+                "replicate": replicate,
+                "method": method,
+                **compact_metrics(y_true, scores),
+            })
+
+    return pd.DataFrame(rows)
+
+graph_null_runs = graph_rewiring_null(
+    A,
+    s0,
+    y_true,
+    n_rewirings=200,
+)
+
+graph_null_summary = summarize_null(
+    filter_scores,
+    y_true,
+    graph_null_runs,
+)
+
+graph_null_summary
+```
+
+Start with 20 rewires to debug, then run at least 200 for the recorded result.
+
+### Selection-aware test
+
+Because you examined multiple filters and noticed the best one, compare your best observed filter against the best filter in every null replicate:
+
+```python
+def filter_bank_selection_test(observed_scores, y_true, null_runs):
+    available_methods = list(null_runs["method"].unique())
+    observed = {
+        method: compact_metrics(y_true, observed_scores[method])
+        for method in available_methods
+    }
+
+    rows = []
+
+    for metric in NULL_METRICS:
+        direction = METRIC_DIRECTION[metric]
+
+        observed_values = {
+            method: values[metric]
+            for method, values in observed.items()
+        }
+
+        if direction == "higher":
+            best_method = max(observed_values, key=observed_values.get)
+            null_best = null_runs.groupby("replicate")[metric].max()
+            extreme = np.sum(null_best >= observed_values[best_method])
+        else:
+            best_method = min(observed_values, key=observed_values.get)
+            null_best = null_runs.groupby("replicate")[metric].min()
+            extreme = np.sum(null_best <= observed_values[best_method])
+
+        rows.append({
+            "metric": metric,
+            "best_observed_method": best_method,
+            "best_observed_value": observed_values[best_method],
+            "null_best_mean": null_best.mean(),
+            "selection_adjusted_p": (
+                (extreme + 1) / (len(null_best) + 1)
+            ),
+        })
+
+    return pd.DataFrame(rows)
+
+graph_bank_test = filter_bank_selection_test(
+    filter_scores,
+    y_true,
+    graph_null_runs,
+)
+
+graph_bank_test
+```
+
+Interpretation:
+
+- Passing only the label null means the ranking is better than random labels.
+- Passing the graph-rewiring null means the actual similarity neighborhoods add information beyond the degree distribution.
+- `graph_bank_test` protects against declaring victory simply because you tried several filters and selected the best one.
+
+Treat AP and one early-retrieval metric—preferably recall@100—as the primary conclusions. The other metrics should be supporting evidence.
+
+> take a look
+
+<details><summary>4 previous messages</summary>
+
+> I’ll inspect the new filter-bank and null-test cells, including their outputs, and check whether the implementation and conclusions are statistically sound.
+>
+> <details><summary>Ran a command</summary>
+>
+> - Ran ``$nb = Get-Content -Raw -Encoding UTF8 'Notebooks\Graph Triage Baseline v0.ipynb' | ConvertFrom-Json; $start=[Math]::Max(0,$nb.cells.Count-12); for($i=$start;$i -lt $nb.cells.Count;$i++){ "===== CELL $i [$($nb.cells[$i].cell_type)] ====="; ($nb.cells[$i].source -join ''); if($nb.cells[$i].outputs){ '--- OUTPUTS ---'; foreach($o in $nb.cells[$i].outputs){ if($o.output_type -eq 'stream'){ $o.text -join '' } elseif($o.output_type -eq 'error'){ "ERROR: $($o.ename): $($o.evalue)"; $o.traceback -join "`n" } elseif($o.data.'text/plain'){ $o.data.'text/plain' -join '' } } } }``
+>
+> </details>
+>
+> The implementation is mostly sound. I found one important interpretation issue: the graph-null result survives choosing among filters for recall@100 and recall@250, but it has not yet been corrected for looking across four different metrics.
+>
+> <details><summary>Ran a command</summary>
+>
+> - Ran `Get-Content -Encoding UTF8 'MASTER_PLAN.md' | Select-Object -Skip 225 -First 31`
+>
+> </details>
+
+</details>
+
+The code is structurally correct, and the result is a narrow exploratory positive:
+
+- After accounting for choosing among filters, the real similarity graph beats degree-preserving rewires for:
+  - recall@100: \(p=0.0398\)
+  - recall@250: \(p=0.0398\)
+- It does not beat the graph null for:
+  - AP: \(p=0.189\)
+  - reviews-to-first: \(p=0.547\)
+
+So the defensible conclusion is:
+
+> The raw-feature similarity graph contains some neighborhood structure useful at fixed review budgets, but it does not produce a reliable overall-ranking improvement.
+
+Before closing this experiment, fix four things:
+
+1. Delete cell 28 containing `sparse.cs`; it will break a clean top-to-bottom run.
+2. Run the selection-aware test on the label null too:
+
+```python
+label_bank_test = filter_bank_selection_test(
+    filter_scores,
+    y_true,
+    label_null_runs,
+)
+label_bank_test
+```
+
+3. Rename `selection_adjusted_p` to `filter_selection_p`. It adjusts for inspecting several filters within one metric—not for inspecting four metrics.
+4. Add a host/user-blocked label permutation. Your 19 malicious sessions come from only two user/host identities, so ordinary session-level permutation assumes more independence than the data supports. This is the most important remaining statistical control.
+
+Because you inspected four metrics, the two \(p=0.0398\) results are not automatically confirmatory across the entire metric suite. Treat them as development evidence, freeze the candidate, and eventually confirm it on holdout.
+
+Also record basic graph reliability before moving on: edge count, component count, degree quantiles, and row-sum assertions for \(P\). No notebook files were changed.
+
+> and then what phase are we on after this
+
+You are currently in Phase 2: M0 session-similarity filter-bank baseline.
+
+After completing the remaining null controls and recording the conclusion, Phase 2 is complete. Then return to Phase 1 because the old telemetry graph was discarded:
+
+```text
+Current: Phase 2 — similarity-graph filter bank
+    ↓
+Phase 1 — construct fresh heterogeneous telemetry graph
+    ↓
+Audit coverage, components, relations, degrees and hop reachability
+    ↓
+Phase 3 — typed structural-statistics baseline
+```
+
+Do not proceed directly to Node2Vec or GraphSAGE. The next substantial task is building the telemetry graph using label-free semantic decisions and verifying that it provides adequate session coverage.
+
+One small prerequisite: confirm the Phase 0 alignment assertions—one canonical session table and identical ordered session IDs for every method. Then Phase 1 begins.
