@@ -1754,3 +1754,1099 @@ Phase 3 — typed structural-statistics baseline
 Do not proceed directly to Node2Vec or GraphSAGE. The next substantial task is building the telemetry graph using label-free semantic decisions and verifying that it provides adequate session coverage.
 
 One small prerequisite: confirm the Phase 0 alignment assertions—one canonical session table and identical ordered session IDs for every method. Then Phase 1 begins.
+
+
+
+-------
+
+# Sync master plan context
+
+> User context
+>
+> Attachments:
+> - --- # catch up on the MASTER_PLAN.md and this > catch up on the [MASTER_PLAN.md…: `/work/home/mwasti/.codex/attachments/45065cb3-52fa-47f6-b461-17f8161b256f/pasted-text.txt`
+
+<details><summary>2 previous messages</summary>
+
+> I’ll read the attached request first, then inspect the repository guidance and `MASTER_PLAN.md` so I can pick up exactly where the project left off.
+>
+> The handoff ends at a clear checkpoint: finish the remaining Phase 2 controls, then rebuild the telemetry graph from scratch. I’m now reconciling that with the current files and notebook outputs so the summary reflects the repository as it actually stands, not just the prior conversation.
+</details>
+
+Caught up on [MASTER_PLAN.md](./MASTER_PLAN.md) and the attached handoff.
+
+Current state:
+
+- The canonical review unit is the strawman session: 1,457 sessions, including 19 malicious.
+- The discarded telemetry graph remains out of scope.
+- The session-similarity kNN graph is the current M0 geometry baseline.
+- Its filter bank produced a narrow exploratory result:
+  - Recall@100 and recall@250 beat degree-preserving rewires after within-metric filter selection: \(p=0.0398\).
+  - AP and reviews-to-first did not.
+- Therefore, raw-feature neighborhoods may help at fixed review budgets, but there is no reliable overall-ranking improvement yet.
+- All scoring remains label-free; labels are evaluation/diagnostic only.
+
+Before M0 can be closed in [Graph Triage Baseline v0.ipynb](./Notebooks/Graph%20Triage%20Baseline%20v0.ipynb):
+
+1. Remove the erroneous `sparse.cs` cell.
+2. Run the selection-aware test on the label-permutation null.
+3. Rename `selection_adjusted_p` to `filter_selection_p`.
+4. Add a host/user-blocked label null.
+5. Record kNN graph reliability: edges, components, degree quantiles, isolates, and normalized-\(P\) assertions.
+6. Record the result as exploratory because four metrics were inspected.
+
+One important plan reconciliation: Phase 2 code exists, but the Phase 0 gate is still formally open. Before beginning the fresh telemetry graph, confirm the canonical-session alignment assertions and shared ordered session IDs.
+
+Then the sequence is:
+
+```text
+finish M0 controls
+→ close Phase 0 alignment gate
+→ Phase 1: construct and audit telemetry graph v1
+→ Phase 3: typed structural-statistics baseline
+→ Node2Vec only if graph coverage passes
+→ GraphSAGE later
+```
+
+No files changed.
+
+> I’m getting quite frustrated with the scope creep. I have 6 weeks. And I would like this to really be done in 3. Given the research I’ve already done this realistically could be done in 1.5 weeks if there wasn’t creep.  Everytime I try to do something properly by researching and this and that and then I do something and get results, I get told by whatever LLM I show it to NOW TRY THIS NOW TRY THIS. Which is why I’m trying to make plans and go okay I have my score suite and I’m making things modular so I can move forward once it’s done and plug and play comfortably once I have the pipeline done and extend horizontally as needed.
+>
+> I don’t know all this theory like when new things come in and then we creep out of them I don’t know all that and spending time on it and creeping more is getting ridiculous
+
+You’re right: the project has accumulated a publication-maximalist research program when you need a finished, modular experiment. The current `MASTER_PLAN.md` has ten phases, several null families, signal atlases, spectral diagnostics, amplification, tracing, holdout confirmation, and a second dataset. That is not a three-week plan.
+
+You are not missing theory or doing the work incorrectly. The definition of “done” keeps moving after every result. We should stop that now.
+
+Here is the scope I recommend locking:
+
+1. One canonical session table and evaluation harness.
+2. Raw-feature kNN baseline.
+3. Existing session-similarity filter bank, reported as exploratory with the null tests already completed. Do not add more theory to it.
+4. One defensible telemetry graph built with label-free rules and a basic coverage audit.
+5. Three graph representations:
+   - typed structural statistics
+   - Node2Vec
+   - relational GraphSAGE
+6. The same session pooling, kNN scorer, and metric suite for all representations.
+7. Essential controls only:
+   - random ranking
+   - raw-feature baseline
+   - one degree-preserving graph rewire
+   - trained-versus-random-init control for GraphSAGE
+8. Freeze the pipeline and run it once on holdout.
+9. Write up what worked, what did not, and what remains future work.
+
+Everything else is deferred:
+
+- full signal atlas
+- spectral band analysis
+- multiple kinds of label permutations
+- large filter searches
+- density-peak and compact-cluster score families
+- anchor-steering comparisons across every method
+- relation/metapath localization
+- deletion-faithfulness tracing
+- conditional amplification experiments
+- SGWT/wavelets
+- exhaustive ablations
+- second-dataset portability
+- architecture or hyperparameter searches
+
+A realistic three-week schedule is:
+
+```text
+Week 1
+Canonical sessions → telemetry graph → coverage audit → structural features
+
+Week 2
+Node2Vec → GraphSAGE → shared scoring/evaluation table
+
+Week 3
+Essential controls → frozen holdout run → figures and write-up
+```
+
+The stop rule should be absolute:
+
+> Once a method satisfies its interface and produces one score per canonical session, evaluate it and move forward. New diagnostics prompted by an interesting result go into “future work”; they do not become prerequisites.
+
+For the current filter bank specifically, we already know enough. It showed possible fixed-budget retrieval value but no dependable AP improvement. Record that and close it. The additional host-blocked null, spectral energy, conductance, and graph-signal-regime classification are scientifically interesting, but they are not necessary for completing the pipeline.
+
+Most importantly, future suggestions from me or another LLM should be classified into only two buckets:
+
+- Required because the existing result would otherwise be invalid.
+- Optional extension after the complete pipeline exists.
+
+“Interesting,” “more rigorous,” and “could strengthen the claim” are not sufficient reasons to interrupt implementation.
+
+The next task is therefore not another M0 diagnostic. It is to lock canonical session alignment and build the fresh telemetry graph. The master plan should also be rewritten as a three-week execution contract, with the current long plan retained only as a future-work backlog.
+
+> Okay I appreciate that. 2 things.
+>
+> first, can you write a contract or skill or whatever you want to call it in an md file, where we describe this meta sort of framework to stick to where yes we are rigerous, yes we are research wise sound and look at all these resources and lit review and make sound and theory backed decisions, but then we also have a focused CONSTRAINED approach, not a goal approach. Because if you know this:
+>
+> David Epstein’s book, Inside the Box: How Constraints Make Us Better, argues that boundless choices and unlimited resources can stifle creativity and cause paralysis. Epstein reveals that self-imposed boundaries, hard deadlines, and obstacles actually spark innovation by forcing resourcefulness, prioritizing tasks, and blocking familiar but mediocre solutions.Key Concepts from Inside the BoxThe Illusion of Unlimited Freedom: Having infinite options often leads to over-analysis, comparison, and unhappiness. Constraints reduce the "problem space," freeing mental energy so you can actually execute ideas rather than getting stuck choosing between them.Blocking the Familiar: The human brain is metabolically lazy and naturally defaults to the easiest, most familiar solutions. Setting artificial constraints forces you to explore new, untested paths.The "Green Eggs and Ham" Effect: Dr. Seuss wrote his famous book on a bet that he couldn't write a story using only 50 distinct words. The strict boundary became a powerful creative catalyst rather than a limitation.Epstein's Strategies for ProductivityStart with the Box: Outline your projects using strict boundaries. For example, Epstein famously restricted his book outline to a single piece of paper.The "Rule of Three": Teams like Pixar are required to pitch three movie ideas rather than just one. This prevents creators from getting too attached to their first idea and forces a broader, more critical evaluation of options.Set Satisficers: Stop searching for the "perfect" choice and instead set a "good-enough" rule (satisficing rules) and stick to it, saving time and mental fatigue.Real-World Examples of ConstraintsNASA’s Elcross Mission: When the team was handed only half the time and budget they originally expected, their complaints quickly pivoted to problem-solving. By repurposing imaging equipment from army tanks, they completed a mission that would have been impossible without the strict constraints.Disney's Sound Effects: Walt Disney lacked the money and equipment for sound during his first cartoons, so he improvised by using tin pans and cowbells, inadvertently establishing the sound for his early studio.
+>
+> I think we are not following this and I think we should be. And I want a md that I can always point to for that
+
+<details><summary>3 previous messages</summary>
+
+> I’m going to make this a repository-level contract rather than a Codex skill: it will be easier to cite in any future conversation, applies equally to humans and LLMs, and can explicitly outrank open-ended planning advice. I’ll encode rigor as a boundary condition while preventing “more rigorous” from continually redefining done.
+>
+> <details><summary>Created a file</summary>
+>
+> - Wrote `./CONSTRAINED_RESEARCH_CONTRACT.md` (+231 -0)
+>
+> </details>
+>
+> The contract is written. I made one deliberate governance choice: `MASTER_PLAN.md` is now treated as the research map and backlog, while this contract controls admission of work into the active three-week scope. That prevents a literature-backed possibility from automatically becoming a new prerequisite.
+</details>
+
+Created [CONSTRAINED_RESEARCH_CONTRACT.md](./CONSTRAINED_RESEARCH_CONTRACT.md).
+
+It establishes:
+
+- Three-week target and six-week hard maximum.
+- A locked, finite deliverable list.
+- `MASTER_PLAN.md` as a research map/backlog—not an active task list.
+- Required-now, substitution, and future-work classifications.
+- Concrete satisficing and stop rules.
+- Scope expansion only with an equivalent deletion.
+- Explicit instructions for LLMs not to turn optional rigor into prerequisites.
+- A locked execution sequence through holdout and writing.
+- Negative results as valid completed results.
+
+The core rule is:
+
+> Use research and theory to make the best decisions inside the box. Do not let them continually expand the box.
+
+No existing files were modified.
+
+> Thank you. Next thing is yes can you make a master plan revision where we do the more focused approach. But I do still want the thesis to be *around* the idea of given a telemetry dataset, we want to try to find WHERE a signal pointing to malicious behaviour could be coming from and then try to amplify it, and use graphs for that and compare methods.
+>
+> Goal being to try to find a signal in some way so that our relation finding malicious patterns and stuff is not dataset specific but more of an agnostic approach that I can bring a different dataset in and find what features and behaviours of THAT data may present a signal and then learn adaptively on that. I do want that to be my project but it doesn't have to EXPLODE. I wanted to follow the textbooks to make this more focused and I think we did that but we need to refine a bit more so we don't creep after a result comes in
+
+<details><summary>5 previous messages</summary>
+
+> I’m revising the master plan around a smaller scientific spine: locate the signal at the level needed to compare the methods, apply one evidence-matched amplification experiment, freeze, and test on holdout. The portability claim will be the reusable procedure—not a claim that the same features or trained model work unchanged on every dataset. I’ll also align the contract so the focused `MASTER_PLAN.md` becomes the active execution plan.
+>
+> <details><summary>Created a file, edited a file</summary>
+>
+> - Wrote `./CONSTRAINED_RESEARCH_CONTRACT.md` (+3 -3)
+> - Wrote `./MASTER_PLAN.md` (+424 -0)
+>
+> </details>
+>
+> The revision keeps your original research identity intact: the generalizable object is the localization-and-amplification workflow, while the signal it discovers is allowed to be dataset-specific. I’ve bounded “where” to representation family, one compact behavior/relation analysis, and the existing neighborhood-regime channels—enough to support the thesis without opening an exhaustive atlas.
+>
+> One issue showed up in review: the first revision was scientifically narrower but still longer than the old plan, which works against the spirit of the contract. I’m tightening it into a genuinely operational master plan—thesis, fixed methods, minimal validity rules, three-week sequence, stop rules, and deferred work—without duplicating the contract.
+>
+> <details><summary>Created a file</summary>
+>
+> - Wrote `./MASTER_PLAN.md` (+304 -0)
+>
+> </details>
+</details>
+
+Revised [MASTER_PLAN.md](./MASTER_PLAN.md) into Version 2: a focused three-week execution plan.
+
+It preserves the central thesis:
+
+- Locate signal across raw features, similarity geometry, structural statistics, walk proximity, and learned typed relations.
+- Identify one compact source of that signal.
+- Apply at most one matching amplification mechanism.
+- Freeze and evaluate on holdout.
+- Treat “no graph signal” or “do not amplify” as valid completed outcomes.
+
+The portability claim is now precise: the workflow is dataset-agnostic, while the useful features, behaviors, and representations may adapt to each dataset.
+
+The revision also locks:
+
+- M0, M1, M2, and M3 without method searches.
+- Minimal controls and two primary metrics.
+- One telemetry-graph construction plus at most one repair.
+- A bounded definition of “where the signal lives.”
+- Result stop rules that prevent new experiments from spawning after every result.
+- An explicit deferred-work list.
+
+I also aligned [CONSTRAINED_RESEARCH_CONTRACT.md](./CONSTRAINED_RESEARCH_CONTRACT.md) so Version 2 of the master plan is formally the active execution plan. The original expansive plan remains recoverable through git history. No notebook code was changed.
+
+> okay so quickly, where am I at and what do I need to do next [Graph Triage Baseline v0.ipynb](Notebooks/Graph Triage Baseline v0.ipynb)
+
+<details><summary>1 previous message</summary>
+
+> I’ll check the notebook’s current final cells against the newly locked Stage 0 definition, then give you only the immediate required actions.
+</details>
+
+You are at **Week 1, Stage 0: close M0 and canonicalize the pipeline**.
+
+M0 is essentially done: the filter bank and label/rewire nulls have run. It found limited fixed-budget retrieval evidence, but no reliable AP improvement.
+
+Do these next, in order:
+
+1. Delete cell 28 containing `sparse.cs`.
+2. Add canonical-session assertions:
+   - unique session IDs;
+   - all processes assigned exactly once;
+   - score count equals 1,457 sessions;
+   - ordered session IDs align across outputs.
+3. Record basic similarity-graph statistics:
+   - nodes and edges;
+   - components and isolates;
+   - degree quantiles;
+   - confirm non-isolate rows of \(P\) sum to 1.
+4. Update the manifest with session counts, malicious-session count, frozen configuration, and git hash.
+5. Restart the kernel and run the notebook cleanly top-to-bottom.
+6. Record M0’s conclusion and stop working on it.
+
+Do **not** add more filter channels, null families, or spectral diagnostics.
+
+After that, Stage 0 is closed and your next implementation is:
+
+> Build the single fresh heterogeneous telemetry graph v1, then perform its basic coverage audit.
+
+No notebook changes were made.
+
+> okay so for the canonical session assertions, do you mean literally add test functions that assert that
+
+Yes—literally add one small validation cell with assertions. This is pipeline plumbing, not a new testing project.
+
+Place this after constructing `sessionized_df`, `sessions`, and `session_table`:
+
+```python
+def assert_canonical_sessions(sessionized_df, sessions, session_table):
+    n_processes = len(sessionized_df)
+    expected_session_ids = np.arange(len(sessions))
+
+    # Every process has one session ID.
+    assert sessionized_df["session_id"].notna().all()
+    assert len(sessionized_df) == n_processes
+
+    # Session IDs are unique, contiguous, and consistent.
+    observed_ids = np.sort(
+        sessionized_df["session_id"].unique()
+    )
+    assert np.array_equal(observed_ids, expected_session_ids)
+
+    # Every process index appears exactly once in the session lists.
+    assigned_indices = np.concatenate([
+        np.asarray(indices)
+        for indices in sessions
+    ])
+    assert len(assigned_indices) == n_processes
+    assert len(np.unique(assigned_indices)) == n_processes
+    assert np.array_equal(
+        np.sort(assigned_indices),
+        np.arange(n_processes),
+    )
+
+    # Each session list agrees with the dataframe mapping.
+    for session_id, indices in enumerate(sessions):
+        mapped_ids = (
+            sessionized_df.loc[indices, "session_id"]
+            .to_numpy()
+        )
+        assert np.all(mapped_ids == session_id)
+
+    # The session table has one ordered row per session.
+    assert session_table["session_id"].is_unique
+    assert len(session_table) == len(sessions)
+    assert np.array_equal(
+        session_table["session_id"].to_numpy(),
+        expected_session_ids,
+    )
+
+assert_canonical_sessions(
+    sessionized_df,
+    sessions,
+    session_table,
+)
+```
+
+Then validate each method’s output:
+
+```python
+def assert_method_output(session_table, scores):
+    scores = np.asarray(scores)
+
+    assert scores.ndim == 1
+    assert len(scores) == len(session_table)
+    assert np.isfinite(scores).all()
+
+for method_name, scores in filter_scores.items():
+    assert_method_output(session_table, scores)
+```
+
+Later methods should return both their ordered `session_ids` and scores, allowing the stronger check:
+
+```python
+def assert_method_alignment(
+    session_table,
+    method_session_ids,
+    scores,
+):
+    expected_ids = session_table["session_id"].to_numpy()
+
+    assert np.array_equal(
+        np.asarray(method_session_ids),
+        expected_ids,
+    )
+    assert_method_output(session_table, scores)
+```
+
+That is enough. You do not need a separate `pytest` suite right now. These checks simply make the notebook fail immediately if a later representation silently changes session order, misses sessions, or duplicates them.
+
+> okay now what
+
+<details><summary>1 previous message</summary>
+
+> I’ll check the notebook’s current ending to see which Stage 0 items you completed, then point you to the single next action.
+</details>
+
+You removed the bad `sparse.cs` cell and added the assertions. One ordering issue remains:
+
+Cell 32 checks `filter_scores` before cell 33 creates it. A clean run will fail.
+
+Do this now:
+
+1. Keep only this in cell 32:
+
+```python
+assert_canonical_sessions(
+    sessionized_df,
+    sessions,
+    session_table,
+)
+```
+
+2. Move these checks to immediately after cell 33:
+
+```python
+for method_name, scores in filter_scores.items():
+    assert_method_output(session_table, scores)
+
+assert_method_alignment(
+    session_table,
+    session_table["session_id"].to_numpy(),
+    filter_scores["raw_knn_distance"],
+)
+```
+
+3. Then add one small graph-reliability cell:
+
+```python
+degree = np.asarray(A.sum(axis=1)).ravel()
+row_sums = np.asarray(P.sum(axis=1)).ravel()
+
+n_components, component_labels = connected_components(
+    A,
+    directed=False,
+)
+
+non_isolates = degree > 0
+assert np.allclose(row_sums[non_isolates], 1.0)
+assert np.allclose(row_sums[~non_isolates], 0.0)
+
+similarity_graph_summary = pd.DataFrame([{
+    "nodes": A.shape[0],
+    "edges": A.nnz // 2,
+    "components": n_components,
+    "isolates": int((degree == 0).sum()),
+    "degree_min": degree.min(),
+    "degree_median": np.median(degree),
+    "degree_90th_percentile": np.quantile(degree, 0.90),
+    "degree_max": degree.max(),
+}])
+
+similarity_graph_summary
+```
+
+Then restart the kernel and run top-to-bottom. If that passes, only the manifest update remains before M0 is closed and you move to building telemetry graph v1.
+
+> okay I did that
+
+<details><summary>1 previous message</summary>
+
+> I’ll verify the reordered checks and graph summary, then tell you whether Stage 0 is ready to close or has one remaining item.
+</details>
+
+The assertions passed, and the similarity graph looks healthy: 1,457 nodes, 15,308 edges, one component, and zero isolates.
+
+One final Stage 0 item remains: update and resave the manifest. Add this after the graph-summary cell:
+
+```python
+import subprocess
+
+git_commit = subprocess.run(
+    ["git", "rev-parse", "--short", "HEAD"],
+    capture_output=True,
+    text=True,
+    check=True,
+).stdout.strip()
+
+slice_manifest.loc[0, "num_of_sessions"] = len(session_table)
+slice_manifest.loc[0, "num_of_malicious_sessions"] = (
+    session_table["label"] == "malicious"
+).sum()
+slice_manifest.loc[0, "num_session_features"] = len(feature_columns)
+slice_manifest.loc[0, "git_commit"] = git_commit
+
+slice_manifest.loc[0, "similarity_graph_nodes"] = A.shape[0]
+slice_manifest.loc[0, "similarity_graph_edges"] = A.nnz // 2
+slice_manifest.loc[0, "similarity_graph_components"] = n_components
+slice_manifest.loc[0, "similarity_graph_isolates"] = (
+    degree == 0
+).sum()
+
+slice_manifest.loc[0, "filter_restart_alpha"] = 0.5
+slice_manifest.loc[0, "filter_steps"] = 3
+
+slice_manifest.to_csv(
+    "../artifacts/descriptions/development_slice_manifest.csv",
+    index=False,
+)
+
+slice_manifest
+```
+
+Then restart the kernel and run everything top-to-bottom once.
+
+If it completes without errors, Stage 0 and M0 are closed. Stop working on the filter bank. Your next section is:
+
+```markdown
+## Telemetry Graph v1
+```
+
+That begins with declaring the graph’s node types, edge types, identity keys, and direction semantics before implementing it.
+
+> okay and that one is the knn graph, not the torch geometric one right?
+
+Correct. That manifest section describes the **session-similarity kNN graph** used by M0:
+
+- Nodes: 1,457 canonical sessions.
+- Edges: kNN similarity in scaled raw-session-feature space.
+- Operator: row-normalized \(P=D^{-1}A\).
+- Purpose: filter the raw anomaly score.
+
+It is **not** the PyTorch Geometric heterogeneous telemetry graph.
+
+The upcoming telemetry graph v1 is separate:
+
+- Nodes: processes and files/context entities.
+- Edges: parent–child and process–file relations.
+- Implementation: PyTorch Geometric `HeteroData`.
+- Purpose: M1 structural statistics, M2 Node2Vec, and M3 GraphSAGE.
+
+Keep their manifests clearly named, for example:
+
+- `session_similarity_graph_*`
+- `telemetry_graph_*`
+
+> okay and how do I make it? do I use the knn adjacency matrix? How do I construct the actual graph like do I do manual linking?
+
+For the **kNN session-similarity graph**, you have already constructed the actual graph.
+
+This line does it:
+
+```python
+A, P = build_session_knn_operator(X, k=15)
+```
+
+Inside that function:
+
+1. Each row of `X` is one session node.
+2. `cKDTree` finds the 15 nearest sessions for every node.
+3. The returned neighbor indices determine the edges automatically.
+4. `A` is the graph’s adjacency matrix.
+5. `P` is the row-normalized adjacency used for filtering.
+
+Conceptually:
+
+```text
+session 0 → nearest sessions [14, 27, 91, ...]
+session 1 → nearest sessions [8, 42, 73, ...]
+                         ↓
+                   adjacency A
+```
+
+This code creates those links:
+
+```python
+rows = np.repeat(np.arange(n), effective_k)
+cols = neighbors.reshape(-1)
+
+A = sparse.csr_matrix(
+    (np.ones(len(rows)), (rows, cols)),
+    shape=(n, n),
+)
+
+A = A.maximum(A.T)
+```
+
+`A.maximum(A.T)` makes it an undirected union graph: sessions \(i\) and \(j\) are linked if either selected the other as a neighbor.
+
+So:
+
+- You do **not** manually link sessions.
+- You do **not** need PyTorch Geometric for M0.
+- `A` is the actual kNN graph.
+- `P` is the propagation operator derived from that graph.
+- NetworkX would only be an optional alternate representation for inspection or rewiring.
+
+The upcoming **telemetry graph v1** is different. Its links are constructed from semantic telemetry fields:
+
+```text
+process → parent process
+process → touched file
+```
+
+Those are rule-based links derived from dataframe columns, not kNN links. That graph will become a PyTorch Geometric `HeteroData` object.
+
+> so temelemtry graph v1 is or isn't the geometric one
+
+Telemetry graph v1 **is the PyTorch Geometric graph**.
+
+Specifically:
+
+```python
+telemetry_graph_v1 = HeteroData()
+```
+
+It contains:
+
+- Process nodes.
+- File/context nodes.
+- Parent–child process edges.
+- Process–file affiliation edges.
+- Typed reverse edges where needed for traversal/message passing.
+
+The distinction is:
+
+| Graph | Representation | Purpose |
+|---|---|---|
+| Session-similarity graph | SciPy adjacency matrix `A` | M0 filter bank |
+| Telemetry graph v1 | PyTorch Geometric `HeteroData` | M1, Node2Vec, and GraphSAGE |
+
+So the next major task is constructing the new PyTorch Geometric `HeteroData` telemetry graph from the canonical sessionized dataframe.
+
+> so I already have the graph builder for that and just need to change it to be taking the relations that we want and to use the frozen session stuff
+
+Yes. Reuse the existing PyTorch Geometric graph-builder skeleton; do not build a second framework.
+
+Make these bounded changes:
+
+1. Remove its internal `_extract_bounded_sessions` logic.
+2. Pass in the already-frozen `sessionized_df` or canonical process-to-session mapping.
+3. Keep one process node per telemetry row/process.
+4. Construct only the declared semantic relations:
+   - process → child process through resolved parent IDs;
+   - process → file through the chosen file identity field;
+   - reverse edge types for traversal/message passing.
+5. Store the canonical session ID for every process node:
+
+```python
+data["process"].session_id = torch.tensor(
+    sessionized_df["session_id"].to_numpy(),
+    dtype=torch.long,
+)
+```
+
+6. Do not use graph connected components to create sessions.
+7. Return both the `HeteroData` graph and the process-node/session mapping.
+8. Run the basic coverage audit before M1, Node2Vec, or GraphSAGE.
+
+Conceptually:
+
+```python
+telemetry_graph = build_telemetry_graph(
+    sessionized_df=sessionized_df,
+    sessions=sessions,
+    config=telemetry_graph_config,
+)
+```
+
+The old builder is the implementation starting point, but its old edge-selection logic produced an extremely sparse graph. So the work is:
+
+> preserve the builder structure, replace its session handling, and correct the label-free relation extraction.
+
+No kNN adjacency is involved in this telemetry graph. The canonical session mapping is used later to pool process-level graph representations back into the same 1,457 review units.
+
+> so I change the build function too to make it use the sessionized df instead
+
+Yes. Change the telemetry graph build function so its dataframe input is the canonical `sessionized_df`, not the original `dev_df` and not a separately sessionized copy.
+
+For example:
+
+```python
+def build_telemetry_graph(sessionized_df, config):
+    df = sessionized_df.reset_index(drop=True).copy()
+
+    assert df["session_id"].notna().all()
+
+    data = HeteroData()
+
+    # Build process nodes and semantic edges from df.
+    # ...
+
+    # Preserve canonical session membership for later pooling.
+    data["process"].session_id = torch.tensor(
+        df["session_id"].to_numpy(),
+        dtype=torch.long,
+    )
+
+    return data
+```
+
+Then call it with:
+
+```python
+telemetry_graph = build_telemetry_graph(
+    sessionized_df,
+    telemetry_graph_config,
+)
+```
+
+Inside the builder:
+
+- Use telemetry columns to create process/file nodes and relations.
+- Use `session_id` only to record which canonical session each process belongs to.
+- Do not create or modify sessions.
+- Do not group processes into graph components and call those sessions.
+- Do not need the separate `sessions` list; the `session_id` column is sufficient.
+
+So the flow becomes:
+
+```text
+dev_df
+→ make_strawman_sessions()
+→ sessionized_df with frozen session_id
+→ build_telemetry_graph(sessionized_df)
+→ process-level graph representations
+→ pool by the stored session_id
+→ 1,457 session representations
+```
+
+The graph remains process/file-level. Passing `sessionized_df` simply ensures that every process node already knows its fixed review unit.
+
+> so I have process and file nodes, and my edges are parent child, touches, and touched_by?
+
+Yes, with one small addition: include the reverse direction of the parent–child relation too.
+
+The clean telemetry graph schema is:
+
+```python
+("process", "parent_of", "process")
+("process", "child_of", "process")   # reverse traversal edge
+
+("process", "touches", "file")
+("file", "touched_by", "process")   # reverse traversal edge
+```
+
+Node types:
+
+```text
+process
+file
+```
+
+Important interpretation:
+
+- `parent_of` and `child_of` are two directions of the same lineage relationship.
+- `touches` and `touched_by` are two directions of the same observed file interaction.
+- Reverse edges support traversal and message passing; they are not separate telemetry evidence.
+
+In `HeteroData`, that looks like:
+
+```python
+data["process", "parent_of", "process"].edge_index = parent_child_edges
+data["process", "child_of", "process"].edge_index = (
+    parent_child_edges.flip(0)
+)
+
+data["process", "touches", "file"].edge_index = process_file_edges
+data["file", "touched_by", "process"].edge_index = (
+    process_file_edges.flip(0)
+)
+```
+
+That four-relation schema is sufficient for telemetry graph v1. Do not add more relation types right now.
+
+> so this is good?
+>
+> def _to_heterodata(self):
+>         data = HeteroData()
+>         data["process"].x = self._process_features()
+>         # data["process"].y = self._process_labels()
+>         data["file"].x = torch.ones((len(self.file_index), 1), dtype=torch.float)
+>
+>         if self.parent_child_edges:
+>             data["process", "parent_of", "process"].edge_index = self._edge_tensor(self.parent_child_edges)
+>             data["process", "child_of", "process"].edge_index = self._edge_tensor(self.parent_child_edges)
+>         if self.touches_edges:
+>             ei = self._edge_tensor(self.touches_edges)
+>             data["process", "touches", "file"].edge_index = ei
+>             data["file", "touched_by", "process"].edge_index = ei.flip(0)
+>         return data
+
+Almost. `child_of` must reverse the parent edges. Currently both directions use the same `edge_index`.
+
+Also attach the frozen session IDs to process nodes. A clean version is:
+
+```python
+def _to_heterodata(self):
+    data = HeteroData()
+
+    data["process"].x = self._process_features()
+    data["process"].session_id = torch.tensor(
+        self.df["session_id"].to_numpy(),
+        dtype=torch.long,
+    )
+
+    data["file"].x = torch.ones(
+        (len(self.file_index), 1),
+        dtype=torch.float,
+    )
+
+    empty_edges = torch.empty((2, 0), dtype=torch.long)
+
+    parent_ei = (
+        self._edge_tensor(self.parent_child_edges)
+        if self.parent_child_edges
+        else empty_edges
+    )
+
+    data["process", "parent_of", "process"].edge_index = parent_ei
+    data["process", "child_of", "process"].edge_index = (
+        parent_ei.flip(0)
+    )
+
+    touches_ei = (
+        self._edge_tensor(self.touches_edges)
+        if self.touches_edges
+        else empty_edges
+    )
+
+    data["process", "touches", "file"].edge_index = touches_ei
+    data["file", "touched_by", "process"].edge_index = (
+        touches_ei.flip(0)
+    )
+
+    return data
+```
+
+Keeping empty edge tensors is useful because the graph schema remains consistent even when a slice has no edges of one type.
+
+Also add this alignment check:
+
+```python
+assert data["process"].num_nodes == len(self.df)
+assert len(data["process"].session_id) == len(self.df)
+```
+
+Commenting out process labels is correct. Labels should not be stored as graph inputs.
+
+> okay so that is the actual builder then now I just give it the sessionized df?
+
+Yes. The builder should now receive `sessionized_df` directly:
+
+```python
+builder = TelemetryGraphBuilder(
+    sessionized_df,
+    # any existing frozen configuration arguments
+)
+
+telemetry_graph = builder.build()
+```
+
+Inside the builder, ensure it stores that dataframe without re-sessionizing:
+
+```python
+class TelemetryGraphBuilder:
+    def __init__(self, sessionized_df, ...):
+        self.df = sessionized_df.reset_index(drop=True).copy()
+
+        assert self.df["session_id"].notna().all()
+```
+
+The complete flow is:
+
+```python
+sessionized_df, sessions = make_strawman_sessions(dev_df)
+session_table = build_raw_session_stats(sessionized_df)
+
+builder = TelemetryGraphBuilder(sessionized_df, ...)
+telemetry_graph = builder.build()
+```
+
+Then verify:
+
+```python
+assert telemetry_graph["process"].num_nodes == len(sessionized_df)
+
+assert np.array_equal(
+    telemetry_graph["process"].session_id.cpu().numpy(),
+    sessionized_df["session_id"].to_numpy(),
+)
+
+assert (
+    telemetry_graph["process"].session_id.unique().numel()
+    == len(session_table)
+)
+```
+
+That is the actual telemetry graph builder. Do not run another sessionizer inside it. After it builds successfully, the next step is the basic telemetry-graph coverage audit—not Node2Vec or GraphSAGE yet.
+
+> self.process_ids = self.df["pid_hash"].tolist()
+>
+>         # Create a mapping from process IDs to their corresponding indices in the graph
+>         self.node_index = {pid: i for i, pid in enumerate(self.process_ids)}
+>         self.file_index = {}
+>
+>         # Contain Parent to Child Edges and File Touches Edges
+>         self.parent_child_edges = []
+>         self.touches_edges = []
+>
+>         # Mapping from files to the processes that touch them
+>         self.file_to_processes = {}
+>
+>         # Add edges for parent-child relationships, and file touches
+>         self._add_parent_child_edges()
+>         self._add_file_edges()
+>
+>         data = self._to_heterodata()
+>         self.sessions = self._extract_bounded_sessions()
+>         data["process"].session_id = self._session_id_tensor(len(self.process_ids), self.sessions)
+>         return data
+>
+> so this is the old build, I keep the self. parent and child edge lists, but what about tha mappings. If the sessionized df has the rows as sessions alredy do I make the mappings based on that?
+
+The key distinction is: `sessionized_df` still has **one row per process**, not one row per session. It is the original process telemetry with an additional canonical `session_id` column.
+
+Therefore, keep these mappings:
+
+- `process_ids`
+- `node_index`
+- `file_index`
+- `file_to_processes`
+- `parent_child_edges`
+- `touches_edges`
+
+They construct the process/file telemetry graph.
+
+Remove only the builder’s independent sessionization:
+
+```python
+self.sessions = self._extract_bounded_sessions()
+data["process"].session_id = self._session_id_tensor(
+    len(self.process_ids),
+    self.sessions,
+)
+```
+
+Your revised `build()` should resemble:
+
+```python
+def build(self):
+    assert "session_id" in self.df.columns
+    assert self.df["session_id"].notna().all()
+    assert self.df["pid_hash"].is_unique
+
+    # One graph process node per dataframe row.
+    self.process_ids = self.df["pid_hash"].tolist()
+
+    # Process identifier → graph node index.
+    self.node_index = {
+        pid: index
+        for index, pid in enumerate(self.process_ids)
+    }
+
+    # File identifier → graph file-node index.
+    self.file_index = {}
+
+    self.parent_child_edges = []
+    self.touches_edges = []
+
+    # File identifier → process-node indices.
+    self.file_to_processes = {}
+
+    self._add_parent_child_edges()
+    self._add_file_edges()
+
+    data = self._to_heterodata()
+
+    assert data["process"].num_nodes == len(self.df)
+
+    assert np.array_equal(
+        data["process"].session_id.cpu().numpy(),
+        self.df["session_id"].to_numpy(),
+    )
+
+    return data
+```
+
+Then `_to_heterodata()` assigns the existing session IDs directly:
+
+```python
+data["process"].session_id = torch.tensor(
+    self.df["session_id"].to_numpy(),
+    dtype=torch.long,
+)
+```
+
+The resulting structure is:
+
+```text
+sessionized_df row 0 → process node 0 → session_id 0
+sessionized_df row 1 → process node 1 → session_id 0
+sessionized_df row 2 → process node 2 → session_id 1
+...
+```
+
+Multiple process nodes can belong to the same session. Later, their structural features or learned embeddings are pooled using that stored `session_id`.
+
+So you should delete or stop calling:
+
+```python
+_extract_bounded_sessions()
+_session_id_tensor()
+```
+
+You do not need to recreate session mappings inside the builder—the canonical mapping is already the `sessionized_df["session_id"]` column.
+
+> and the feature columns should come from wher
+
+Use the same label-free raw process telemetry columns already approved for the strawman baseline—but select them from `sessionized_df`, before session aggregation.
+
+Do not use the existing lowercase `feature_columns`; those are columns from `session_table` and represent aggregated session features.
+
+Define a separate list:
+
+```python
+PROCESS_FEATURE_COLS = strawman_numeric_columns(
+    sessionized_df
+)
+```
+
+Then pass it into the builder:
+
+```python
+builder = TelemetryGraphBuilder(
+    sessionized_df,
+    process_feature_cols=PROCESS_FEATURE_COLS,
+)
+
+telemetry_graph = builder.build()
+```
+
+For example:
+
+```python
+class TelemetryGraphBuilder:
+    def __init__(
+        self,
+        sessionized_df,
+        process_feature_cols,
+    ):
+        self.df = sessionized_df.reset_index(drop=True).copy()
+        self.process_feature_cols = list(process_feature_cols)
+        self.process_scaler = StandardScaler()
+```
+
+Then:
+
+```python
+def _process_features(self):
+    values = (
+        self.df[self.process_feature_cols]
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+        .to_numpy(dtype=np.float32)
+    )
+
+    values = self.process_scaler.fit_transform(values)
+
+    return torch.tensor(
+        values,
+        dtype=torch.float,
+    )
+```
+
+Explicitly verify that forbidden fields are absent:
+
+```python
+assert "red_team" not in PROCESS_FEATURE_COLS
+assert "session_id" not in PROCESS_FEATURE_COLS
+assert not any(
+    column.startswith("label_")
+    for column in PROCESS_FEATURE_COLS
+)
+```
+
+The distinction is:
+
+```text
+PROCESS_FEATURE_COLS
+    from sessionized_df
+    → features for individual process nodes
+    → used by GraphSAGE
+
+feature_columns
+    from session_table
+    → aggregated features for complete sessions
+    → used by the raw-session kNN baseline
+```
+
+File-node features can remain constant ones:
+
+```python
+data["file"].x = torch.ones(
+    (len(self.file_index), 1),
+    dtype=torch.float,
+)
+```
+
+M1 constructs structural features from the graph, and Node2Vec uses topology. The process feature matrix mainly matters for GraphSAGE. Reusing the already-screened raw telemetry columns avoids opening another feature-selection project.
+
+> TypeError: Cannot interpret 'torch.int64' as a data type
+
+<details><summary>1 previous message</summary>
+
+> I’ll locate the exact failing line in the notebook. This error usually means a PyTorch dtype such as `torch.int64` was passed into pandas or NumPy, which expect a NumPy dtype instead.
+</details>
+
+The failing line passes `torch.long` into pandas:
+
+```python
+self.df["session_id"].to_numpy(dtype=torch.long)
+```
+
+Pandas expects a NumPy dtype. Move the PyTorch dtype to `torch.tensor`:
+
+```python
+data["process"].session_id = torch.tensor(
+    self.df["session_id"].to_numpy(),
+    dtype=torch.long,
+)
+```
+
+Alternatively:
+
+```python
+data["process"].session_id = torch.from_numpy(
+    self.df["session_id"].to_numpy(dtype=np.int64)
+)
+```
+
+Also remove this later line:
+
+```python
+sessions = builder.sessions
+```
+
+The builder no longer creates sessions. Keep the canonical `sessions` already returned here:
+
+```python
+sessionized_df, sessions = make_strawman_sessions(dev_df)
+```
+
+Then rerun the builder cell.
