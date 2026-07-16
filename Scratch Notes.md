@@ -1,3 +1,28 @@
+removed session file rarity threshold for the telemetry graph v1
+
+74k files are touched by conhost
+
+It is a **God-node/supernode problem for the graph topology**, but it does **not** make the sessions incorrect.
+
+The two concerns are separate:
+
+- Sessions come from user/host identity and time boundaries. They remain the same 1,457 canonical sessions.
+- The `conhost.exe` executable node connects 74,565 process nodes, including processes from many different sessions.
+
+That hub can affect graph methods by:
+
+- making unrelated processes appear only two hops apart;
+- dominating Node2Vec walks;
+- causing GraphSAGE to mix many unrelated neighborhoods;
+- making the graph appear highly connected without providing much discriminative information.
+
+But it is a real property of this telemetry slice, not necessarily a data-processing bug. The correct conclusion is:
+
+> The graph has complete session coverage, but its executable-affiliation topology is strongly dominated by one ubiquitous executable.
+
+Keep the sessions unchanged. Record the hub, use the degree-preserving rewire control later, and see whether graph methods learn anything beyond that degree structure. Do not redesign the sessionizer because of it.
+
+
 ## Metric Suite to expand to later
 
 #### Triage Method score:
