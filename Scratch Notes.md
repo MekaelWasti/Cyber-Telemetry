@@ -1,3 +1,5 @@
+# Prev 
+
 removed session file rarity threshold for the telemetry graph v1
 
 74k files are touched by conhost
@@ -2875,3 +2877,177 @@ sessionized_df, sessions = make_strawman_sessions(dev_df)
 ```
 
 Then rerun the builder cell.
+
+# To-Do later
+
+Yes—the graph methods and raw kNN baseline use the same 1,457 canonical sessions. I do not see a session-count or pooling mismatch causing the results.
+The alignment is:
+same 100,000-process development slice
+→ same make_strawman_sessions(dev_df)
+→ 1,457 ordered sessions
+→ 19 malicious sessions
+Raw kNN builds one feature row for each of those 1,457 sessions.
+The telemetry graph builds exactly 100,000 process nodes and preserves each process’s canonical session_id.
+M1, Node2Vec, and GraphSAGE pool process representations using those IDs.
+Alignment assertions require exactly 1,457 finite scores in the same session order.
+Session identity, five-minute inactivity, and 30-minute maximum duration match the master-plan contract.
+The graph is structurally consistent, but one semantic audit remains important:
+2,318 parent–child edges.
+99,850 process–executable edges.
+Only 53 executable identities.
+One executable connects to 74,565 processes.
+Consequently, the reported 100% graph coverage is largely driven by executable affiliation. The current rule includes every filename appearing at least twice and does not apply the declared RARE_FILE_MAX_DEGREE. That is acceptable if the intended rule is “all shared executable identities,” but the 74,565-degree filename must be confirmed as a genuine executable—not missing-value text, a generic placeholder, or an overly broad identity.
+So the verdict is:
+Session construction: correct.
+Raw-kNN/graph session alignment: correct.
+Process-to-session pooling: correct.
+Graph topology implementation: internally correct.
+Executable-edge semantics: not fully validated until the dominant filename is inspected.
+The surprising Node2Vec/GraphSAGE results are not explained by the wrong number of sessions. The dominant executable hub remains the more credible construction concern.
+
+For a bounded, portable repair, I would use a label-free relative degree cap—such as excluding executable nodes connected to more than 1% of process nodes—then explicitly report the resulting 86.6% session coverage and isolate handling. The existing graph should remain as the hub-inclusive control. This is also why the Node2Vec degree/rewire control is essential before attributing its improvement to meaningful telemetry structure.
+
+# My own notes
+If I did the idea where it's like Agentic signal extraction, I would only use the best method that I found? or I would try different methods across different permuations of the dataset features that the agent proposed? And then we see where the best signal is. I think that's the contribution I want to make. I want to first do this whole master plan and find which method works best, do ablations and all that sort of stuff to test if its really true that one method works best. Whatever the result, one method, 2,3, whatever it may be, we package that as part of a pipeline and have the agent perform feature extractions given a telemetry dataset, and then run those different extractions across the different methods. Then we see which method localizes the strongest signal, give the analyst that information and proceed to serve them the embedding visualization and maybe do steering search. 
+
+This is worth engaging with properly, because your own results already answer half of the design question — and the sequencing instinct ("master plan first, then package") is right, so this stays a future-work conversation, not a scope change. Per your own stop-rule table: new idea appears → preserve it, don't obey it. So let's preserve it well.
+
+**Your direct question: best method only, or battery across permutations?**
+
+The battery. And the argument for that isn't taste — it's your thesis result itself. The entire premise of the master plan is that *which representation carries signal is a property of the dataset*, not of the method. If ACME4 says "typed structural stats win here," that finding doesn't transfer as "use M1 everywhere" — your portability claim is explicitly *procedure*-portable, not model-portable. A new dataset may express its signal in a different regime entirely (different sessionization dynamics, different graph density, different confound structure). So the agent's product isn't "the winning method" — it's the *diagnostic battery, run cheaply-to-expensively with escalation gates*, exactly the ladder you're executing manually right now. The master plan **is** the agent's protocol. You're doing its first execution by hand. The thesis validates the instrument; the agentic version automates the instrument. That's a clean, defensible framing for the contribution.
+
+The agent's real degree of freedom is the layer *above* the battery: the schema adapter and feature-extraction proposals. Given raw telemetry, what are candidate session definitions, feature sets, graph constructions? That's where dataset-specific judgment lives and where an LLM agent plausibly adds value (reading schemas, proposing semantically meaningful relations). Each proposal then flows through the **fixed** part: canonical review units, label boundary, common scorer, localization comparison, nulls. Agent varies the inputs; the evaluation contract never moves.
+
+**Now the constraint that makes or breaks this — and you're uniquely positioned to know it, because you just got burned by it.**
+
+M0's lesson: you tested 5 filters, reported the best, and the selection-adjusted null showed a scrambled graph matches that "win" 33% of the time. That was *five* variants. An agent proposing dozens of feature permutations across 4–6 methods is a selection space of hundreds of comparisons — an overfitting machine by construction unless the selection correction is a first-class component of the loop. So the architecture has to be: agent proposes → battery evaluates → **selection-adjusted nulls gate what counts as "signal found"** → only surviving signals reach the analyst. The agent gets to search; the null ladder decides what the search actually found. Without that gate, the pipeline confidently serves analysts noise with beautiful embeddings attached. With it, you've built something honest that most AutoML-flavored security work doesn't have. That's arguably the *core* technical contribution of the agentic version — and it's a lesson you can cite from your own Chapter N results rather than assert abstractly.
+
+This also connects cleanly to your decision-log workflow: agent proposals logged append-only with what-would-falsify entries, human-judgment flags on schema-level choices. Same discipline, new layer.
+
+**What to do with this right now:** one paragraph in your future-work notes capturing exactly three things — (1) battery-not-winner, with the portability argument; (2) agent freedom = adapter layer, fixed core = evaluation contract; (3) selection correction as the load-bearing component, citing the M0 result. Then close the file and get back to the repair pass. The strongest version of this proposal is the one that can point at a completed, controlled master plan and say "this procedure, automated."
+
+
+The rerun is clean and sequential: cells 40–50 executed in order, and all new representation-contract assertions passed.
+
+Updated comparison:
+
+| Representation | AP | Recall@100 | Recall@250 |
+|---|---:|---:|---:|
+| M2 Node2Vec | **0.0667 ± 0.0271** | **0.1404 ± 0.0304** | **0.8070 ± 0.0304** |
+| M3 random-init | 0.0202 ± 0.0017 | 0.0877 ± 0.0304 | 0.1404 ± 0.0304 |
+| M3 trained | 0.0195 ± 0.0016 | 0.0877 ± 0.0304 | 0.1404 ± 0.0608 |
+| Masked M3 random-init | 0.0202 ± 0.0017 | 0.0877 ± 0.0304 | 0.1404 ± 0.0304 |
+| Masked M3 trained | 0.0200 ± 0.0021 | 0.0702 ± 0.0608 | 0.1930 ± 0.0804 |
+
+Key conclusions:
+
+- Node2Vec is essentially unchanged by the explicit size channel. Its result is robust to the fairness correction.
+- Full GraphSAGE training remains tied with or slightly worse than random initialization.
+- Masked GraphSAGE improves recall@250 somewhat, but loses AP and recall@100. With only 19 malicious sessions and substantial seed variance, that is not a demonstrated win.
+- Both GraphSAGE objectives train properly: losses decrease smoothly from approximately 1.39 to 1.17–1.21.
+- The identical full-M3 and masked-M3 random controls confirm that both now use the same restored full graph at inference.
+
+The explicit size channel substantially changed GraphSAGE’s kNN geometry, but it did so equally for the controls and according to the frozen contract. This is not evidence of an implementation error.
+
+The defensible M3 conclusion is now stronger: GraphSAGE learns its reconstruction objective, but learned embeddings do not consistently improve session triage over the corresponding untrained encoder. Stop M3 here; Node2Vec remains the representation requiring attribution through the shortcut and degree-preserving rewire controls.
+
+
+# Stage 5 results
+
+The table is coherent and supports a clear provisional conclusion:
+
+- **M2 Node2Vec is strongest overall:** highest AP (`0.0667`) and recall@250 (`0.807`).
+- **M0 one-vs-two-hop is strongest at the strict review budget:** recall@100 is `0.2105`, versus Node2Vec’s `0.1404`.
+- **M1 finds the first malicious session fastest:** 7 reviews, but its overall retrieval is weak.
+- **GraphSAGE training adds no value:** trained AP and recall@250 are slightly worse than random initialization, with identical recall@100.
+- Node2Vec is variable across seeds, so its mean result cannot yet be treated as semantically validated.
+
+The `NaN` standard deviations are expected for deterministic single-run methods. They do not indicate missing results.
+
+One small reporting caveat: C0 is one fixed random ranking, so its “47 reviews to first malicious” is just one random draw. The analytic random expectation is 72.9 reviews. Label C0 as `fixed seed 42`, or aggregate it across the fixed seeds before publication.
+
+Your Stage 5 localization statement is provisionally:
+
+> Short-walk proximity provides the strongest broad retrieval signal, while an intermediate-scale raw-neighborhood contrast provides the strongest early-budget recall. Learned relational GraphSAGE adds no demonstrated value over its random initialization.
+
+Node2Vec is not yet the final winner. The next required cell is its shortcut analysis and degree-preserving rewire control.
+
+
+Do ALL THE methods see the same features?
+
+No. The methods intentionally do not all see the same features because each method tests a different possible location of malicious signal.
+
+| Method | Information available |
+|---|---|
+| C0 random | No features |
+| C1 raw kNN | 138 engineered session features |
+| M0 filter bank | Same 138 features used to construct the session kNN graph |
+| M1 structural | Five graph-degree/role features plus log session size |
+| M2 Node2Vec | Graph topology only: 48 learned dimensions plus log session size |
+| M3 GraphSAGE | 67 raw process features plus typed graph topology, pooled to 48 dimensions plus log session size |
+| Masked M3 | Same as M3, but trained by reconstructing masked edges |
+
+The 138 C1/M0 features consist approximately of:
+
+```text
+mean and standard deviation of 67 process features
++ session size
++ duration
++ unique process count
++ unique filename count
+```
+
+GraphSAGE receives those same 67 underlying numeric columns at the process level, but it does not directly receive their session standard deviations, duration, or uniqueness summaries. Instead, it receives graph relations and learns a process representation before session pooling.
+
+Why this is valid:
+
+The research question is signal localization:
+
+```text
+raw session aggregates?
+raw-feature neighborhood geometry?
+explicit structural statistics?
+short-walk topology?
+learned feature–topology interaction?
+```
+
+Giving every method the same final features would erase those distinctions. Node2Vec, for example, is deliberately topology-only because it tests whether short-walk context contains signal without raw attributes.
+
+Fairness is established through what remains fixed:
+
+- Same 100,000 processes
+- Same 1,457 ordered sessions
+- Same labels used only for evaluation
+- Same explicit log-session-size channel where process representations are pooled
+- Same `StandardScaler`
+- Same `k=15` distance scorer
+- Same metrics and review budgets
+- Same stochastic seeds
+- Required random and raw-feature controls
+
+Therefore, this is a fair **representation-family comparison**, but it is not a strict feature-matched architectural ablation.
+
+The claims must reflect that distinction:
+
+Valid:
+
+> Node2Vec provides the strongest performance among the declared label-free representations.
+
+Not yet valid:
+
+> Node2Vec’s architecture is intrinsically better than GraphSAGE when both receive identical information.
+
+Likewise, trained-versus-random GraphSAGE is feature-matched internally, so the conclusion that its training objective adds no value is valid. The broader cross-family comparison answers where useful signal appears, not which model wins under identical inputs.
+
+
+The agentic workflow becomes a rigorous scientific loop:
+
+Agent proposes: Reads the new dataset schema and proposes 5 different feature mappings and semantic edge rules.
+
+Pipeline executes: The fixed pipeline runs the triage battery across all 5 proposals.
+
+The Gatekeeper: The pipeline runs the null/rewire tests, specifically adjusting for the fact that the agent made 5 guesses.
+
+Output: The system only reports a signal if it beats the selection-adjusted null. Otherwise, it tells the analyst, "No reliable topological signal found in this dataset."
+
+
