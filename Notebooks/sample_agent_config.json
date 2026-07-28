@@ -1,0 +1,159 @@
+{
+  "timestamp_col": "process_started",
+  "existing_session_id_col": null,
+  "session_group_cols": [
+    "hostname",
+    "user_name"
+  ],
+  "graph_relations": [
+    {
+      "relation_name": "parent_of",
+      "source_node_type": "process",
+      "source_column": "parent_pid_hash",
+      "target_node_type": "process",
+      "target_column": "pid_hash",
+      "directed": true,
+      "meaning": "Establishes execution lineage from parent to child process."
+    },
+    {
+      "relation_name": "executes",
+      "source_node_type": "process",
+      "source_column": "pid_hash",
+      "target_node_type": "executable",
+      "target_column": "file_sha2",
+      "directed": true,
+      "meaning": "Links a process to its executable image hash."
+    },
+    {
+      "relation_name": "runs_on",
+      "source_node_type": "process",
+      "source_column": "pid_hash",
+      "target_node_type": "host",
+      "target_column": "hostname",
+      "directed": true,
+      "meaning": "Associates a process with the endpoint where it executed."
+    },
+    {
+      "relation_name": "owned_by",
+      "source_node_type": "process",
+      "source_column": "pid_hash",
+      "target_node_type": "user",
+      "target_column": "user_name",
+      "directed": true,
+      "meaning": "Identifies the user account that owns the executing process."
+    }
+  ],
+  "label_col": "red_team",
+  "malicious_label_values": [
+    1
+  ],
+  "selected_columns": [
+    {
+      "column": "cpu_cycle_count",
+      "type": "numeric",
+      "reason": "Represents the total CPU cycles consumed, indicating computational intensity."
+    },
+    {
+      "column": "commit_charge",
+      "type": "numeric",
+      "reason": "Indicates the amount of virtual memory allocated to the process."
+    },
+    {
+      "column": "commit_peak",
+      "type": "numeric",
+      "reason": "Captures the maximum memory footprint, useful for spotting memory-intensive tasks."
+    },
+    {
+      "column": "duration_seconds",
+      "type": "numeric",
+      "reason": "Measures the lifespan of the process execution."
+    },
+    {
+      "column": "read_operation_count",
+      "type": "numeric",
+      "reason": "Counts the number of file system read operations."
+    },
+    {
+      "column": "write_operation_count",
+      "type": "numeric",
+      "reason": "Counts the number of file system write operations."
+    },
+    {
+      "column": "reg_reads",
+      "type": "numeric",
+      "reason": "Measures the frequency of registry read operations."
+    },
+    {
+      "column": "reg_writes",
+      "type": "numeric",
+      "reason": "Measures the frequency of registry write operations."
+    },
+    {
+      "column": "reg_createkeys",
+      "type": "numeric",
+      "reason": "Indicates structural changes to the registry hierarchy."
+    },
+    {
+      "column": "tcp_connect_count",
+      "type": "numeric",
+      "reason": "Tracks the number of outbound TCP connections established."
+    },
+    {
+      "column": "tcp_send_size",
+      "type": "numeric",
+      "reason": "Measures the volume of data transmitted over TCP."
+    },
+    {
+      "column": "tcp_recv_size",
+      "type": "numeric",
+      "reason": "Measures the volume of data received over TCP."
+    },
+    {
+      "column": "net_total_events",
+      "type": "numeric",
+      "reason": "Summarizes the overall network activity of the process."
+    }
+  ],
+  "feature_sets": [
+    {
+      "name": "Process Resource Consumption Profile",
+      "columns": [
+        "cpu_cycle_count",
+        "commit_charge",
+        "commit_peak",
+        "duration_seconds"
+      ],
+      "rationale": "Measures computational intensity and memory footprint to identify abnormal resource monopolization, typical in cryptomining or heavy data compression."
+    },
+    {
+      "name": "Local State Modification and Data Access",
+      "columns": [
+        "read_operation_count",
+        "write_operation_count",
+        "reg_reads",
+        "reg_writes",
+        "reg_createkeys"
+      ],
+      "rationale": "Captures the extent of local state modification and data access, highlighting excessive data staging, persistence mechanisms, or configuration changes."
+    },
+    {
+      "name": "TCP Communication Volume and Directionality",
+      "columns": [
+        "tcp_connect_count",
+        "tcp_send_size",
+        "tcp_recv_size",
+        "net_total_events"
+      ],
+      "rationale": "Monitors the volume and directionality of network interactions to identify potential data exfiltration or active command and control channels."
+    }
+  ],
+  "quality": {
+    "behavioral_feature_quality": "high",
+    "topology_quality": "high",
+    "summary": "The dataset provides excellent OS-level behavioral signals including CPU, memory, registry, and network metrics. Graph topology is strong with clear lineage, host, user, and executable image resolution.",
+    "limitations": [
+      "Network destinations are aggregated and lack specific remote IP/port visibility.",
+      "File target paths for I/O operations are missing, preventing file-access graphs."
+    ]
+  }
+}
