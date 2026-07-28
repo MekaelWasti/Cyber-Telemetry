@@ -1,3 +1,52 @@
+July 28 2026
+
+To-do Today
+
+- Signal analysis methods
+
+retain original representation X and dimension names
+→ construct a frozen session kNN graph
+→ compute s, Ps, s−Ps, and Ps−P²s
+→ diagnose smooth / contrastive / intermediate-scale organization
+→ run label-shuffle and degree-preserving-rewire controls
+→ perform method-appropriate source analysis
+→ test one matched amplifier—or conclude “do not amplify”
+
+
+
+Later
+- Go over existing engine
+
+
+Avoid a feature × relation explosion initially
+If the agent proposes three feature sets and three separate relation configurations, then GraphSAGE alone creates nine combinations per seed. That quickly becomes a label-visible search.
+For the first complete version, I would retain:
+exactly three bounded feature hypotheses;
+one main graph containing all semantically justified relations;
+relation-specific statistics and diagnostics;
+only a small grouped relation ablation for the strongest graph method.
+Later, if evaluation shows that relation selection itself is the contribution, relation configurations can become explicit hypotheses. At that point you record the candidate count and control the selection process.
+
+
+You can revise the method suite later
+That is entirely sensible during development. You may discover that:
+M1 never changes meaningfully across relation sets;
+Node2Vec mostly reproduces degree;
+trained GraphSAGE never beats random initialization;
+certain feature hypotheses are redundant;
+another bounded representation is better justified.
+Those are valid reasons to revise the suite on development data. Once the final suite is chosen, freeze it before holdout. The sealed holdout cannot be used to decide which methods to remove or add.
+
+
+This also means that we can swap methods in and out the method suite and run them through the evaluation pipeline across different feature sets and relations and see if they actually produce anything useful or they are useless, through defensible and statistical analysis
+
+
+
+You can say: "Method A produced a useful signal. Our analysis proves this signal is Locally Contrastive, meaning the attacks are isolated anomalies hiding in normal traffic. Therefore, we applied a residual filter, which improved detection by 15% compared to our randomized control graph."
+
+
+
+
 # Prev 
 
 removed session file rarity threshold for the telemetry graph v1
