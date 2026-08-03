@@ -1,0 +1,11 @@
+# Verified AutoSignal environment (Python 3.14.6, 2026-08-03).
+# Keep this file synchronized with the software-environment field in frozen runs.
+numpy==2.4.6
+pandas==2.3.3
+pyarrow==24.0.0
+scipy==1.18.0
+scikit-learn==1.9.0
+streamlit==1.60.0
+torch==2.13.0
+torch-geometric==2.8.0.post1
+umap-learn==0.5.12

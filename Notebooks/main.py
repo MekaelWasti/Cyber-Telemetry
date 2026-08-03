@@ -35,6 +35,23 @@ DEMO_LABEL_COLORS = {
     "malicious": "#DC2626",
     "unknown": "#64748B",
 }
+REPRESENTATION_NAMES = {
+    "random_score": "Random score",
+    "raw_session": "Raw session features",
+    "typed_structural_stats": "Typed structural statistics",
+    "node2vec": "Node2Vec / DeepWalk",
+    "graphsage_random": "GraphSAGE (untrained)",
+    "graphsage_trained": "GraphSAGE (trained)",
+    "dominant_style_untrained": "DOMINANT-style (untrained)",
+    "dominant_style_trained": "DOMINANT-style (trained)",
+}
+SCORER_NAMES = {
+    "random": "Random ranking",
+    "knn_mean_distance": "kNN mean distance",
+    "isolation_forest": "Isolation Forest",
+    "hdbscan_rare_cluster": "HDBSCAN rare population",
+    "dominant_joint_reconstruction": "Joint reconstruction error",
+}
 DATAMAP_RESIZE_HANDLE = """
 <div
   id="autosignal-resize-handle"
@@ -167,12 +184,21 @@ def default_config_text() -> str:
 
 def display_name(row: pd.Series) -> str:
     hypothesis = row.get("hypothesis")
-    seed = row.get("seed")
-    name = str(row["method"])
+    representation = row.get("representation")
+    scorer = row.get("scorer")
+    representation_seed = row.get("representation_seed")
+    scorer_seed = row.get("scorer_seed")
+    name = REPRESENTATION_NAMES.get(
+        representation, str(representation or row["method"])
+    )
+    if scorer:
+        name += f" · {SCORER_NAMES.get(scorer, scorer)}"
     if hypothesis:
         name += f" · {hypothesis}"
-    if pd.notna(seed):
-        name += f" · seed {int(seed)}"
+    if pd.notna(representation_seed):
+        name += f" · representation seed {int(representation_seed)}"
+    if pd.notna(scorer_seed) and scorer_seed != representation_seed:
+        name += f" · scorer seed {int(scorer_seed)}"
     return name
 
 
@@ -454,6 +480,13 @@ method_names = {
 has_demo_labels = embeddings["label"].ne("unknown").any()
 signal_results = pd.DataFrame(result.get("signal_results", []))
 signal_scores = pd.DataFrame(result.get("signal_scores", []))
+representation_results = pd.DataFrame(result.get("representation_results", []))
+representation_stability = pd.DataFrame(
+    result.get("representation_stability", [])
+)
+scorer_diagnostics = pd.DataFrame(result.get("scorer_diagnostics", []))
+score_components = pd.DataFrame(result.get("score_components", []))
+dominant_diagnostics = result.get("dominant_diagnostics", [])
 
 st.subheader(st.session_state.get("autosignal_dataset_name", "Telemetry dataset"))
 summary_columns = st.columns(5)
@@ -487,9 +520,11 @@ with tabs[0]:
     st.subheader("Representation-family comparison")
     metric_columns = [
         "display_name",
-        "method",
+        "representation",
+        "scorer",
         "hypothesis",
-        "seed",
+        "representation_seed",
+        "scorer_seed",
         "average_precision",
         "reviews_to_first_malicious",
         "recall_at_25",
@@ -522,6 +557,91 @@ with tabs[0]:
     if not failed_results.empty:
         with st.expander("Failed or skipped methods", expanded=True):
             st.dataframe(failed_results, width="stretch", hide_index=True)
+
+    st.subheader("Full-space representation checks")
+    st.caption(
+        "Development-only diagnostics computed on the original representation "
+        "X, never on UMAP. They test whether information is present before an "
+        "unsupervised scorer converts X into a ranking."
+    )
+    if representation_results.empty:
+        st.info("This payload predates full-space representation evaluation.")
+    else:
+        representation_columns = [
+            "representation",
+            "hypothesis",
+            "representation_seed",
+            "n_sessions",
+            "n_dimensions",
+            "malicious_neighbor_purity",
+            "neighbor_purity_prevalence_reference",
+            "neighbor_purity_lift",
+            "neighbor_purity_permutation_p",
+            "label_silhouette",
+            "linear_probe_average_precision",
+            "status",
+            "reason",
+        ]
+        st.dataframe(
+            representation_results[
+                [
+                    column
+                    for column in representation_columns
+                    if column in representation_results
+                ]
+            ],
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "malicious_neighbor_purity": st.column_config.NumberColumn(
+                    "Malicious-neighbor purity", format="%.3f"
+                ),
+                "neighbor_purity_prevalence_reference": (
+                    st.column_config.NumberColumn(
+                        "Purity reference", format="%.3f"
+                    )
+                ),
+                "neighbor_purity_lift": st.column_config.NumberColumn(
+                    "Purity lift", format="%+.3f"
+                ),
+                "neighbor_purity_permutation_p": (
+                    st.column_config.NumberColumn(
+                        "Purity permutation p", format="%.4f"
+                    )
+                ),
+                "label_silhouette": st.column_config.NumberColumn(
+                    "Label silhouette", format="%+.3f"
+                ),
+                "linear_probe_average_precision": (
+                    st.column_config.NumberColumn(
+                        "Linear-probe AP", format="%.3f"
+                    )
+                ),
+            },
+        )
+        if not representation_stability.empty:
+            with st.expander("Cross-seed representation stability"):
+                stability_columns = [
+                    "representation",
+                    "hypothesis",
+                    "first_seed",
+                    "second_seed",
+                    "distance_rank_correlation",
+                    "mean_neighbor_jaccard",
+                    "status",
+                    "reason",
+                ]
+                st.dataframe(
+                    representation_stability[
+                        [
+                            column
+                            for column in stability_columns
+                            if column in representation_stability
+                        ]
+                    ],
+                    width="stretch",
+                    hide_index=True,
+                )
 
 with tabs[1]:
     st.subheader("Session representation")
@@ -1047,6 +1167,7 @@ with tabs[3]:
     selected_score_key = st.selectbox(
         "Ranking method",
         score_method_keys,
+        format_func=lambda key: method_names.get(key, key),
         key="score_method",
     )
     ranked = (
@@ -1055,18 +1176,36 @@ with tabs[3]:
         .sort_values("score", ascending=False)
         .reset_index(drop=True)
     )
+    if not score_components.empty:
+        selected_components = score_components[
+            score_components["method_key"].eq(selected_score_key)
+        ].drop(columns=["method_key", "representation_key", "scorer"], errors="ignore")
+        if not selected_components.empty:
+            ranked = ranked.merge(
+                selected_components,
+                on="session_id",
+                how="left",
+                validate="one_to_one",
+            )
     ranked.insert(0, "rank", np.arange(1, len(ranked) + 1))
+    ranking_columns = [
+        "rank",
+        "session_id",
+        "score",
+        "label",
+        "cluster_id",
+        "is_noise",
+        "cluster_score",
+        "attribute_error",
+        "structure_error",
+        "joint_score",
+        "rows",
+        "start_time",
+        "end_time",
+    ]
     st.dataframe(
         ranked[
-            [
-                "rank",
-                "session_id",
-                "score",
-                "label",
-                "rows",
-                "start_time",
-                "end_time",
-            ]
+            [column for column in ranking_columns if column in ranked]
         ].head(100),
         width="stretch",
         hide_index=True,
@@ -1106,7 +1245,49 @@ with tabs[5]:
         st.subheader("Dataset profile")
         st.json(st.session_state.get("autosignal_profile", {}), expanded=False)
 
-    export = json.dumps(result, indent=2)
+    st.subheader("Scorer diagnostics")
+    if scorer_diagnostics.empty:
+        st.info("No scorer diagnostics are present in this payload.")
+    else:
+        scorer_columns = [
+            "representation",
+            "scorer",
+            "hypothesis",
+            "representation_seed",
+            "scorer_seed",
+            "status",
+            "reason",
+            "effective_clusters",
+            "noise_sessions",
+            "dominant_to_second_ratio",
+            "n_estimators",
+            "max_samples",
+        ]
+        st.dataframe(
+            scorer_diagnostics[
+                [
+                    column
+                    for column in scorer_columns
+                    if column in scorer_diagnostics
+                ]
+            ],
+            width="stretch",
+            hide_index=True,
+        )
+
+    st.subheader("DOMINANT-style training diagnostics")
+    if dominant_diagnostics:
+        st.json(dominant_diagnostics, expanded=False)
+        st.caption(
+            "This is a sparse heterogeneous adaptation: telemetry attributes "
+            "are reconstructed only for primary nodes, while typed relations "
+            "use sampled positive and negative edges. Secondary-node inputs "
+            "remain constant and are not treated as attribute evidence."
+        )
+    else:
+        st.info("No DOMINANT-style diagnostics are present in this payload.")
+
+    export = json.dumps(result, indent=2, allow_nan=False)
     st.download_button(
         "Download result payload",
         data=export,

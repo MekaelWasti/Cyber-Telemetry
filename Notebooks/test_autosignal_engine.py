@@ -2,6 +2,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -17,6 +18,12 @@ from autosignal_engine import (
     pick_signal_regime,
     run_autosignal,
     validate_config,
+)
+from autosignal_analysis import (
+    evaluate_representation,
+    isolation_forest_anomaly_scores,
+    rare_cluster_anomaly_scores,
+    representation_stability,
 )
 
 
@@ -138,7 +145,153 @@ def renamed_config():
     }
 
 
+def single_feature_config():
+    config = renamed_config()
+    retained = set(config["feature_sets"][0]["columns"])
+    config["selected_columns"] = [
+        item
+        for item in config["selected_columns"]
+        if item["column"] in retained
+    ]
+    config["feature_sets"] = [config["feature_sets"][0]]
+    return config
+
+
 class AutoSignalEngineTests(unittest.TestCase):
+    def test_graph_construction_failure_declares_every_planned_outcome(self):
+        df = renamed_telemetry(48)
+        with patch(
+            "autosignal_engine.build_typed_graph",
+            side_effect=RuntimeError("forced graph failure"),
+        ):
+            result = run_autosignal(
+                df,
+                single_feature_config(),
+                k=3,
+                seeds=(42,),
+                graph_epochs=1,
+                signal_permutations=99,
+            )
+
+        methods = pd.DataFrame(result["method_results"])
+        self.assertEqual(len(methods), 18)
+        self.assertEqual(methods["method_key"].nunique(), 18)
+        graph_dependent = methods.loc[
+            ~methods["representation"].isin(["random_score", "raw_session"])
+        ]
+        self.assertEqual(len(graph_dependent), 14)
+        self.assertTrue(graph_dependent["status"].eq("failed").all())
+        self.assertTrue(
+            graph_dependent["error"].str.contains("forced graph failure").all()
+        )
+
+        representations = pd.DataFrame(result["representation_results"])
+        self.assertEqual(len(representations), 7)
+        self.assertEqual(representations["representation_key"].nunique(), 7)
+        self.assertEqual(int(representations["status"].eq("completed").sum()), 1)
+        self.assertEqual(int(representations["status"].eq("failed").sum()), 6)
+        json.dumps(result, allow_nan=False)
+
+    def test_representation_evaluation_uses_full_space_and_is_deterministic(self):
+        representation = np.asarray(
+            [[0.0], [0.1], [10.0], [10.1]], dtype=float
+        )
+        labels = np.asarray(
+            ["malicious", "malicious", "benign", "benign"]
+        )
+        first = evaluate_representation(
+            representation,
+            labels,
+            k=1,
+            n_permutations=99,
+            random_state=17,
+        )
+        second = evaluate_representation(
+            representation,
+            labels,
+            k=1,
+            n_permutations=99,
+            random_state=17,
+        )
+
+        self.assertEqual(first, second)
+        self.assertEqual(first["status"], "completed")
+        self.assertEqual(first["effective_k"], 1)
+        self.assertEqual(first["malicious_neighbor_purity"], 1.0)
+        self.assertAlmostEqual(
+            first["neighbor_purity_prevalence_reference"], 1 / 3
+        )
+        self.assertGreater(first["label_silhouette"], 0.9)
+        self.assertGreaterEqual(first["linear_probe_average_precision"], 0.5)
+
+        unavailable = evaluate_representation(
+            representation,
+            None,
+            k=1,
+            n_permutations=99,
+        )
+        self.assertEqual(unavailable["status"], "unavailable")
+        self.assertFalse(unavailable["labels_available"])
+        self.assertIsNone(unavailable["malicious_neighbor_purity"])
+
+    def test_isolation_forest_is_deterministic_and_scores_far_point_highest(self):
+        rng = np.random.default_rng(9)
+        representation = np.vstack(
+            [rng.normal(0, 0.05, size=(32, 2)), np.asarray([[8.0, 8.0]])]
+        )
+        first, first_diagnostics = isolation_forest_anomaly_scores(
+            representation,
+            random_state=23,
+            n_estimators=64,
+        )
+        second, second_diagnostics = isolation_forest_anomaly_scores(
+            representation,
+            random_state=23,
+            n_estimators=64,
+        )
+
+        np.testing.assert_allclose(first, second, rtol=0, atol=0)
+        self.assertEqual(first_diagnostics, second_diagnostics)
+        self.assertEqual(int(np.argmax(first)), len(representation) - 1)
+        self.assertTrue(np.isfinite(first).all())
+
+    def test_rare_cluster_scorer_promotes_separated_coherent_population(self):
+        rng = np.random.default_rng(11)
+        dominant = rng.normal(0, 0.08, size=(50, 2))
+        rare = rng.normal(7, 0.08, size=(10, 2))
+        representation = np.vstack([dominant, rare])
+
+        first, assignments, diagnostics = rare_cluster_anomaly_scores(
+            representation,
+            min_cluster_size=5,
+            dominance_ratio=1.25,
+        )
+        second, second_assignments, second_diagnostics = (
+            rare_cluster_anomaly_scores(
+                representation,
+                min_cluster_size=5,
+                dominance_ratio=1.25,
+            )
+        )
+
+        self.assertEqual(diagnostics["status"], "completed")
+        self.assertEqual(diagnostics, second_diagnostics)
+        np.testing.assert_array_equal(assignments, second_assignments)
+        np.testing.assert_allclose(first, second, rtol=0, atol=0)
+        self.assertGreater(first[50:].mean(), first[:50].mean())
+        self.assertTrue(np.isfinite(first).all())
+
+    def test_representation_stability_is_rotation_invariant(self):
+        rng = np.random.default_rng(13)
+        first = rng.normal(size=(24, 2))
+        rotation = np.asarray([[0.0, -1.0], [1.0, 0.0]])
+        second = first @ rotation
+        stability = representation_stability(first, second, k=4)
+
+        self.assertEqual(stability["status"], "completed")
+        self.assertAlmostEqual(stability["distance_rank_correlation"], 1.0)
+        self.assertAlmostEqual(stability["mean_neighbor_jaccard"], 1.0)
+
     def test_signal_channels_and_matched_amplifiers_match_formulas(self):
         propagation = sparse.csr_matrix(
             [
@@ -311,15 +464,46 @@ class AutoSignalEngineTests(unittest.TestCase):
             signal_permutations=99,
         )
 
+        environment = result["run_manifest"]["software_environment"]
+        self.assertRegex(environment["python"], r"^\d+\.\d+\.\d+$")
+        self.assertIsNotNone(environment["packages"]["scikit-learn"])
+
         method_results = pd.DataFrame(result["method_results"])
-        self.assertTrue(method_results["status"].eq("completed").all())
-        self.assertEqual(len(method_results), 12)
+        self.assertFalse(method_results["status"].eq("failed").any())
+        self.assertTrue(
+            method_results["status"].isin(
+                ["completed", "abstained", "degenerate", "unavailable"]
+            ).all()
+        )
+        self.assertEqual(len(method_results), 40)
+        self.assertEqual(method_results["method_key"].nunique(), 40)
 
         session_count = result["run_manifest"]["sessions"]
         scores = pd.DataFrame(result["session_scores"])
         per_method_counts = scores.groupby("method_key")["session_id"].nunique()
         self.assertTrue((per_method_counts == session_count).all())
+        self.assertEqual(
+            set(scores["method_key"]),
+            set(
+                method_results.loc[
+                    method_results["status"].eq("completed"), "method_key"
+                ]
+            ),
+        )
+        self.assertFalse(
+            scores.duplicated(["method_key", "session_id"]).any()
+        )
         self.assertEqual(result["graph_manifest"]["primary_id_column"], "process_key")
+
+        representation_results = pd.DataFrame(result["representation_results"])
+        self.assertEqual(len(representation_results), 17)
+        self.assertEqual(representation_results["representation_key"].nunique(), 17)
+        self.assertTrue(representation_results["status"].eq("completed").all())
+        for record in result["representation_results"]:
+            self.assertEqual(record["n_sessions"], session_count)
+            self.assertEqual(
+                len(record["dimension_names"]), record["n_dimensions"]
+            )
 
         non_random_method_keys = set(
             scores.loc[
@@ -388,11 +572,23 @@ class AutoSignalEngineTests(unittest.TestCase):
                 rtol=0,
                 atol=0,
             )
-        json.dumps(result)
+        components = pd.DataFrame(result["score_components"])
+        dominant_components = components[
+            components["scorer"].eq("dominant_joint_reconstruction")
+        ].dropna(subset=["attribute_error"])
+        self.assertFalse(dominant_components.empty)
+        np.testing.assert_allclose(
+            dominant_components["joint_score"].to_numpy(),
+            0.5 * dominant_components["attribute_error"].to_numpy()
+            + 0.5 * dominant_components["structure_error"].to_numpy(),
+            rtol=1e-6,
+            atol=1e-6,
+        )
+        json.dumps(result, allow_nan=False)
 
     def test_score_only_mode_is_label_isolated(self):
         df = renamed_telemetry()
-        config = renamed_config()
+        config = single_feature_config()
         config["label_col"] = None
 
         changed_labels = df.copy()
@@ -464,6 +660,88 @@ class AutoSignalEngineTests(unittest.TestCase):
             atol=1e-6,
         )
         self.assertEqual(first["run_manifest"]["mode"], "score_only")
+        self.assertTrue(
+            all(
+                record["status"] == "unavailable"
+                and not record["labels_available"]
+                for record in first["representation_results"]
+            )
+        )
+
+    def test_configured_development_labels_do_not_change_label_free_outputs(self):
+        df = renamed_telemetry(rows=48)
+        config = single_feature_config()
+        changed_labels = df.copy()
+        changed_labels["is_attack"] = 1 - changed_labels["is_attack"]
+
+        first = run_autosignal(
+            df,
+            config,
+            k=3,
+            seeds=(42,),
+            graph_epochs=1,
+            signal_permutations=99,
+        )
+        second = run_autosignal(
+            changed_labels,
+            config,
+            k=3,
+            seeds=(42,),
+            graph_epochs=1,
+            signal_permutations=99,
+        )
+
+        for table_name, value_columns in (
+            ("session_scores", ["score"]),
+            ("embeddings", ["x", "y"]),
+        ):
+            first_table = pd.DataFrame(first[table_name]).sort_values(
+                ["method_key", "session_id"]
+            )
+            second_table = pd.DataFrame(second[table_name]).sort_values(
+                ["method_key", "session_id"]
+            )
+            self.assertEqual(
+                first_table[["method_key", "session_id"]].to_dict("records"),
+                second_table[["method_key", "session_id"]].to_dict("records"),
+            )
+            np.testing.assert_allclose(
+                first_table[value_columns].to_numpy(dtype=float),
+                second_table[value_columns].to_numpy(dtype=float),
+                rtol=1e-6,
+                atol=1e-6,
+            )
+
+        def label_blind_signal_results(payload):
+            return sorted(
+                [
+                    {
+                        key: value
+                        for key, value in record.items()
+                        if key != "evaluation"
+                    }
+                    for record in payload["signal_results"]
+                ],
+                key=lambda record: record["method_key"],
+            )
+
+        self.assertEqual(
+            label_blind_signal_results(first),
+            label_blind_signal_results(second),
+        )
+        first_components = pd.DataFrame(first["score_components"]).sort_values(
+            ["method_key", "session_id"]
+        ).reset_index(drop=True)
+        second_components = pd.DataFrame(second["score_components"]).sort_values(
+            ["method_key", "session_id"]
+        ).reset_index(drop=True)
+        pd.testing.assert_frame_equal(
+            first_components,
+            second_components,
+            check_exact=False,
+            rtol=1e-6,
+            atol=1e-6,
+        )
 
     def test_label_cannot_be_selected_as_a_feature(self):
         df = renamed_telemetry()
@@ -478,6 +756,21 @@ class AutoSignalEngineTests(unittest.TestCase):
         config["feature_sets"][0]["columns"].append("is_attack")
         with self.assertRaises(ConfigValidationError):
             validate_config(config, df)
+
+    def test_label_cannot_enter_session_or_graph_construction(self):
+        df = renamed_telemetry()
+        for mutate in (
+            lambda cfg: cfg.update(timestamp_col="is_attack"),
+            lambda cfg: cfg.update(existing_session_id_col="is_attack"),
+            lambda cfg: cfg["session_group_cols"].append("is_attack"),
+            lambda cfg: cfg["graph_relations"][0].update(
+                source_column="is_attack"
+            ),
+        ):
+            config = renamed_config()
+            mutate(config)
+            with self.assertRaises(ConfigValidationError):
+                validate_config(config, df)
 
 
 if __name__ == "__main__":

@@ -2,25 +2,30 @@
 
 The schema agent proposes a JSON configuration.  This module validates and
 executes that configuration; it never asks an LLM to run preprocessing code.
-The implementation deliberately keeps the v1 contract small:
+The implementation deliberately keeps the contract bounded:
 
 * one canonical activity-window sessionization;
 * one typed graph shared by all methods;
-* raw kNN and GraphSAGE per feature hypothesis;
-* structural statistics and Node2Vec once per topology;
+* registered session representations separated from scorer adapters;
+* kNN, Isolation Forest, and one HDBSCAN population scorer;
+* structural statistics, Node2Vec, GraphSAGE controls, and DOMINANT-style
+  reconstruction;
 * one aligned, frontend-friendly result payload.
 """
 
 from __future__ import annotations
 
 import copy
+import importlib.metadata
 import math
 import os
+import platform
 import random
 import re
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
+from itertools import combinations
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +49,13 @@ from torch_geometric.nn import HeteroConv, SAGEConv
 from torch_geometric.utils import negative_sampling
 from umap import UMAP
 
+from autosignal_analysis import (
+    evaluate_representation,
+    isolation_forest_anomaly_scores,
+    rare_cluster_anomaly_scores,
+    representation_stability,
+)
+
 
 SEED = 42
 DEFAULT_K = 15
@@ -58,6 +70,30 @@ SIGNAL_TAIL_FRACTION = 0.05
 SIGNAL_MIN_TAIL_SIZE = 10
 SIGNAL_ALPHA = 0.05
 SIGNAL_AMPLIFICATION_ALPHA = 0.5
+DOMINANT_ATTRIBUTE_ALPHA = 0.5
+
+
+def _software_environment() -> dict[str, Any]:
+    packages: dict[str, str | None] = {}
+    for distribution in (
+        "numpy",
+        "pandas",
+        "scipy",
+        "scikit-learn",
+        "torch",
+        "torch-geometric",
+        "umap-learn",
+    ):
+        try:
+            packages[distribution] = importlib.metadata.version(distribution)
+        except importlib.metadata.PackageNotFoundError:
+            packages[distribution] = None
+    return {
+        "python": platform.python_version(),
+        "packages": packages,
+    }
+
+
 SIGNAL_REGIME_NAMES = (
     "Neighborhood-supported",
     "Locally Contrastive",
@@ -201,6 +237,13 @@ def validate_config(config: dict[str, Any], df: pd.DataFrame) -> dict[str, Any]:
     label_col = cfg.get("label_col")
     if label_col in selected_names:
         errors.append("The evaluation label cannot be a selected feature.")
+    if label_col is not None:
+        if cfg.get("timestamp_col") == label_col:
+            errors.append("The evaluation label cannot be the timestamp column.")
+        if cfg.get("existing_session_id_col") == label_col:
+            errors.append("The evaluation label cannot define session IDs.")
+        if label_col in group_columns:
+            errors.append("The evaluation label cannot define session groups.")
 
     feature_sets = cfg.get("feature_sets")
     if not isinstance(feature_sets, list) or not feature_sets:
@@ -265,6 +308,11 @@ def validate_config(config: dict[str, Any], df: pd.DataFrame) -> dict[str, Any]:
             if not _column_exists(column, df):
                 errors.append(
                     f"Relation {name!r} references missing {endpoint} {column!r}."
+                )
+            if label_col is not None and column == label_col:
+                errors.append(
+                    f"Relation {name!r} cannot use the evaluation label as "
+                    f"{endpoint}."
                 )
         if not isinstance(relation.get("directed"), bool):
             errors.append(f"Relation {name!r} directed must be true or false.")
@@ -555,15 +603,42 @@ def _pool_rows(
     return matrix, ["mean", "std", "max", "sum", "log_session_size"]
 
 
+def _pooled_dimension_names(row_dimension_names: list[str]) -> list[str]:
+    return [
+        f"{aggregation}::{name}"
+        for aggregation in ("mean", "std", "max", "sum")
+        for name in row_dimension_names
+    ] + ["log_session_size"]
+
+
 def knn_anomaly_scores(matrix: np.ndarray, k: int = DEFAULT_K) -> np.ndarray:
     matrix = np.asarray(matrix, dtype=np.float32)
     if len(matrix) <= 1:
         return np.zeros(len(matrix), dtype=float)
     effective_k = min(int(k), len(matrix) - 1)
-    distances, _ = cKDTree(matrix).query(
+    distances, candidates = cKDTree(matrix).query(
         matrix, k=effective_k + 1, workers=-1
     )
-    return np.asarray(distances[:, 1:], dtype=float).mean(axis=1)
+    distances = np.asarray(distances, dtype=float)
+    candidates = np.asarray(candidates, dtype=np.int64)
+    if distances.ndim == 1:
+        distances = distances[:, None]
+        candidates = candidates[:, None]
+    selected = np.empty((len(matrix), effective_k), dtype=float)
+    for row_index, (row_distances, row_candidates) in enumerate(
+        zip(distances, candidates)
+    ):
+        non_self = row_distances[row_candidates != row_index]
+        if len(non_self) < effective_k:
+            # This is only expected under unusual duplicate/tie behavior.
+            all_distances, all_candidates = cKDTree(matrix).query(
+                matrix[row_index], k=len(matrix)
+            )
+            non_self = np.asarray(all_distances, dtype=float)[
+                np.asarray(all_candidates, dtype=np.int64) != row_index
+            ]
+        selected[row_index] = non_self[:effective_k]
+    return selected.mean(axis=1)
 
 
 def build_session_knn_operator(
@@ -901,17 +976,59 @@ def apply_matched_amplification(
     return transformed
 
 
+def _representation_key(
+    representation: str,
+    hypothesis: str | None,
+    representation_seed: int | None,
+) -> str:
+    key = representation
+    if hypothesis is not None:
+        key = f"{key}::{hypothesis}"
+    if representation_seed is not None:
+        key = f"{key}::rep_seed={int(representation_seed)}"
+    return key
+
+
+def _method_key(
+    method: str,
+    hypothesis: str | None,
+    representation_seed: int | None,
+    scorer_seed: int | None,
+) -> str:
+    key = method
+    if hypothesis is not None:
+        key = f"{key}::{hypothesis}"
+    if representation_seed is not None:
+        key = f"{key}::rep_seed={int(representation_seed)}"
+    if scorer_seed is not None and scorer_seed != representation_seed:
+        key = f"{key}::score_seed={int(scorer_seed)}"
+    elif scorer_seed is not None and representation_seed is None:
+        key = f"{key}::score_seed={int(scorer_seed)}"
+    return key
+
+
 def _method_metrics(
     method: str,
     scores: np.ndarray,
     labels: np.ndarray | None,
     hypothesis: str | None,
     seed: int | None = None,
+    *,
+    representation_key: str | None = None,
+    representation_method: str | None = None,
+    scorer: str | None = None,
+    representation_seed: int | None = None,
+    scorer_seed: int | None = None,
 ) -> dict[str, Any]:
     row: dict[str, Any] = {
         "method": method,
         "hypothesis": hypothesis,
         "seed": seed,
+        "representation_key": representation_key,
+        "representation": representation_method,
+        "scorer": scorer,
+        "representation_seed": representation_seed,
+        "scorer_seed": scorer_seed,
         "status": "completed",
         "average_precision": None,
         "reviews_to_first_malicious": None,
@@ -989,7 +1106,17 @@ def _signal_metric_values(
         hypothesis,
         seed,
     )
-    metadata = {"method", "hypothesis", "seed", "status"}
+    metadata = {
+        "method",
+        "hypothesis",
+        "seed",
+        "representation_key",
+        "representation",
+        "scorer",
+        "representation_seed",
+        "scorer_seed",
+        "status",
+    }
     return {
         key: value
         for key, value in metrics.items()
@@ -1014,6 +1141,11 @@ def _add_signal_artifacts(
     method: str,
     hypothesis: str | None,
     seed: int | None,
+    representation_key: str,
+    representation_method: str,
+    scorer: str,
+    representation_seed: int | None,
+    scorer_seed: int | None,
     representation: np.ndarray,
     scores: np.ndarray,
     labels: np.ndarray | None,
@@ -1080,6 +1212,11 @@ def _add_signal_artifacts(
             "method": method,
             "hypothesis": hypothesis,
             "seed": seed,
+            "representation_key": representation_key,
+            "representation": representation_method,
+            "scorer": scorer,
+            "representation_seed": representation_seed,
+            "scorer_seed": scorer_seed,
             "status": "completed",
             "regime": diagnosis["regime"],
             "winner_index": diagnosis["winner_index"],
@@ -1100,6 +1237,11 @@ def _add_signal_artifacts(
                 "method": method,
                 "hypothesis": hypothesis,
                 "seed": seed,
+                "representation_key": representation_key,
+                "representation": representation_method,
+                "scorer": scorer,
+                "representation_seed": representation_seed,
+                "scorer_seed": scorer_seed,
                 "session_id": int(session_id),
                 "label": label,
                 "intrinsic": float(channels["intrinsic"][session_id]),
@@ -1135,15 +1277,66 @@ def _add_method_artifacts(
     representation: np.ndarray,
     labels: np.ndarray | None,
     seed: int | None = None,
+    *,
+    representation_key: str | None = None,
+    representation_method: str | None = None,
+    scorer: str | None = None,
+    representation_seed: int | None = None,
+    scorer_seed: int | None = None,
+    coordinates: np.ndarray | None = None,
+    signal_eligible: bool = True,
 ) -> None:
-    payload["method_results"].append(
-        _method_metrics(method, scores, labels, hypothesis, seed)
+    values = np.asarray(representation, dtype=float)
+    score_values = np.asarray(scores, dtype=float).ravel()
+    if values.ndim != 2:
+        raise ValueError("A method representation must be a 2D matrix.")
+    if len(values) != len(score_values):
+        raise ValueError("Representation and scores are not session-aligned.")
+    if len(values) != int(payload["run_manifest"]["sessions"]):
+        raise ValueError("Method output does not match canonical sessions.")
+    if not np.isfinite(values).all() or not np.isfinite(score_values).all():
+        raise ValueError("Method representation and scores must be finite.")
+    if labels is not None and len(labels) != len(values):
+        raise ValueError("Method output and labels are not session-aligned.")
+
+    representation_method = representation_method or method
+    scorer = scorer or "native"
+    representation_key = representation_key or _representation_key(
+        representation_method,
+        hypothesis,
+        representation_seed,
     )
-    key = method if hypothesis is None else f"{method}::{hypothesis}"
-    if seed is not None:
-        key = f"{key}::seed={seed}"
-    coordinates = _embedding_2d(representation)
-    for session_id, (score, coordinate) in enumerate(zip(scores, coordinates)):
+    key = _method_key(
+        method,
+        hypothesis,
+        representation_seed,
+        scorer_seed,
+    )
+    metric_row = _method_metrics(
+        method,
+        score_values,
+        labels,
+        hypothesis,
+        seed,
+        representation_key=representation_key,
+        representation_method=representation_method,
+        scorer=scorer,
+        representation_seed=representation_seed,
+        scorer_seed=scorer_seed,
+    )
+    metric_row["method_key"] = key
+    payload["method_results"].append(metric_row)
+    if coordinates is None:
+        coordinates = _embedding_2d(values)
+    coordinates = np.asarray(coordinates, dtype=float)
+    if coordinates.shape != (len(values), 2) or not np.isfinite(
+        coordinates
+    ).all():
+        raise ValueError("Representation coordinates are not aligned and finite.")
+
+    for session_id, (score, coordinate) in enumerate(
+        zip(score_values, coordinates)
+    ):
         label = str(labels[session_id]) if labels is not None else "unknown"
         payload["session_scores"].append(
             {
@@ -1151,6 +1344,11 @@ def _add_method_artifacts(
                 "method": method,
                 "hypothesis": hypothesis,
                 "seed": seed,
+                "representation_key": representation_key,
+                "representation": representation_method,
+                "scorer": scorer,
+                "representation_seed": representation_seed,
+                "scorer_seed": scorer_seed,
                 "session_id": int(session_id),
                 "score": float(score),
                 "label": label,
@@ -1162,6 +1360,11 @@ def _add_method_artifacts(
                 "method": method,
                 "hypothesis": hypothesis,
                 "seed": seed,
+                "representation_key": representation_key,
+                "representation": representation_method,
+                "scorer": scorer,
+                "representation_seed": representation_seed,
+                "scorer_seed": scorer_seed,
                 "session_id": int(session_id),
                 "x": float(coordinate[0]),
                 "y": float(coordinate[1]),
@@ -1172,7 +1375,7 @@ def _add_method_artifacts(
     # A random score baseline is not a representation-plus-kNN method. Building
     # a graph from its one-dimensional random scores would manufacture
     # neighborhood support, so it is deliberately excluded from diagnosis.
-    if method == "random_baseline":
+    if method == "random_baseline" or not signal_eligible:
         return
 
     try:
@@ -1182,8 +1385,13 @@ def _add_method_artifacts(
             method=method,
             hypothesis=hypothesis,
             seed=seed,
-            representation=representation,
-            scores=scores,
+            representation_key=representation_key,
+            representation_method=representation_method,
+            scorer=scorer,
+            representation_seed=representation_seed,
+            scorer_seed=scorer_seed,
+            representation=values,
+            scores=score_values,
             labels=labels,
         )
     except Exception as error:
@@ -1195,6 +1403,11 @@ def _add_method_artifacts(
                 "method": method,
                 "hypothesis": hypothesis,
                 "seed": seed,
+                "representation_key": representation_key,
+                "representation": representation_method,
+                "scorer": scorer,
+                "representation_seed": representation_seed,
+                "scorer_seed": scorer_seed,
                 "status": "unavailable",
                 "regime": None,
                 "winner_index": None,
@@ -1207,6 +1420,531 @@ def _add_method_artifacts(
                 "error": f"{type(error).__name__}: {error}",
             }
         )
+
+
+def _add_representation_result(
+    payload: dict[str, Any],
+    *,
+    representation_key: str,
+    representation_method: str,
+    hypothesis: str | None,
+    representation_seed: int | None,
+    representation: np.ndarray,
+    labels: np.ndarray | None,
+    dimension_names: list[str] | None = None,
+) -> None:
+    if any(
+        record["representation_key"] == representation_key
+        for record in payload["representation_results"]
+    ):
+        return
+
+    values = np.asarray(representation, dtype=float)
+    if values.ndim != 2:
+        raise ValueError("A representation must be a 2D matrix.")
+    if len(values) != int(payload["run_manifest"]["sessions"]):
+        raise ValueError("Representation does not match canonical sessions.")
+    if not np.isfinite(values).all():
+        raise ValueError("Representation must contain finite values.")
+    if dimension_names is not None and len(dimension_names) != values.shape[1]:
+        raise ValueError("Representation dimension names are not aligned.")
+
+    evaluation = evaluate_representation(
+        values,
+        labels,
+        k=int(payload["run_manifest"]["k"]),
+        n_permutations=int(payload["signal_config"]["n_permutations"]),
+        random_state=SEED,
+    )
+    payload["representation_results"].append(
+        {
+            "representation_key": representation_key,
+            "representation": representation_method,
+            "hypothesis": hypothesis,
+            "representation_seed": representation_seed,
+            "dimension_names": dimension_names,
+            **evaluation,
+        }
+    )
+    payload["_representation_matrices"][representation_key] = values.astype(
+        np.float32, copy=True
+    )
+
+
+def _add_failed_representation_result(
+    payload: dict[str, Any],
+    *,
+    representation_key: str,
+    representation_method: str,
+    hypothesis: str | None,
+    representation_seed: int | None,
+    reason: str,
+) -> None:
+    """Declare a representation that could not be constructed."""
+
+    if any(
+        record["representation_key"] == representation_key
+        for record in payload["representation_results"]
+    ):
+        return
+    payload["representation_results"].append(
+        {
+            "representation_key": representation_key,
+            "representation": representation_method,
+            "hypothesis": hypothesis,
+            "representation_seed": representation_seed,
+            "dimension_names": None,
+            "status": "failed",
+            "reason": reason,
+            "labels_available": payload["run_manifest"]["mode"]
+            == "development",
+            "n_sessions": int(payload["run_manifest"]["sessions"]),
+            "n_dimensions": None,
+            "n_malicious": None,
+            "n_benign": None,
+            "effective_k": None,
+            "malicious_neighbor_purity": None,
+            "neighbor_purity_prevalence_reference": None,
+            "neighbor_purity_lift": None,
+            "neighbor_purity_permutation_p": None,
+            "neighbor_purity_permutations": None,
+            "label_silhouette": None,
+            "linear_probe_average_precision": None,
+            "linear_probe_folds": None,
+            "linear_probe_split": None,
+            "random_state": None,
+        }
+    )
+
+
+def _finalize_representation_stability(payload: dict[str, Any]) -> None:
+    """Compare stochastic replicas without serializing high-dimensional X."""
+
+    matrices = payload.pop("_representation_matrices", {})
+    groups: dict[tuple[str, str | None], list[dict[str, Any]]] = {}
+    for record in payload["representation_results"]:
+        if record.get("representation_seed") is None:
+            continue
+        group_key = (record["representation"], record.get("hypothesis"))
+        groups.setdefault(group_key, []).append(record)
+
+    for (representation_method, hypothesis), records in groups.items():
+        ordered = sorted(records, key=lambda record: record["representation_seed"])
+        for first, second in combinations(ordered, 2):
+            first_matrix = matrices.get(first["representation_key"])
+            second_matrix = matrices.get(second["representation_key"])
+            if first_matrix is None or second_matrix is None:
+                continue
+            try:
+                stability = representation_stability(
+                    first_matrix,
+                    second_matrix,
+                    k=int(payload["run_manifest"]["k"]),
+                    random_state=SEED,
+                )
+            except Exception as error:
+                stability = {
+                    "status": "unavailable",
+                    "reason": f"{type(error).__name__}: {error}",
+                    "n_sessions": int(len(first_matrix)),
+                    "distance_rank_correlation": None,
+                    "mean_neighbor_jaccard": None,
+                    "effective_k": None,
+                }
+            payload["representation_stability"].append(
+                {
+                    "representation": representation_method,
+                    "hypothesis": hypothesis,
+                    "first_representation_key": first["representation_key"],
+                    "second_representation_key": second["representation_key"],
+                    "first_seed": int(first["representation_seed"]),
+                    "second_seed": int(second["representation_seed"]),
+                    **stability,
+                }
+            )
+
+
+def _unavailable_scorer_result(
+    payload: dict[str, Any],
+    *,
+    method: str,
+    hypothesis: str | None,
+    representation_key: str,
+    representation_method: str,
+    scorer: str,
+    representation_seed: int | None,
+    scorer_seed: int | None,
+    status: str,
+    reason: str,
+) -> None:
+    method_key = _method_key(
+        method,
+        hypothesis,
+        representation_seed,
+        scorer_seed,
+    )
+    if any(
+        record.get("method_key") == method_key
+        for record in payload["method_results"]
+    ):
+        return
+    row = _method_metrics(
+        method,
+        np.zeros(int(payload["run_manifest"]["sessions"]), dtype=float),
+        None,
+        hypothesis,
+        representation_seed if representation_seed is not None else scorer_seed,
+        representation_key=representation_key,
+        representation_method=representation_method,
+        scorer=scorer,
+        representation_seed=representation_seed,
+        scorer_seed=scorer_seed,
+    )
+    row["status"] = status
+    row["error"] = reason
+    row["method_key"] = method_key
+    payload["method_results"].append(row)
+
+
+def _add_failed_scoring_suite(
+    payload: dict[str, Any],
+    *,
+    representation_method: str,
+    method_prefix: str,
+    hypothesis: str | None,
+    scorer_seeds: tuple[int, ...],
+    error: Exception,
+    representation_seed: int | None = None,
+) -> None:
+    """Declare every planned scorer when its representation cannot be built."""
+
+    reason = f"{type(error).__name__}: {error}"
+    representation_key = _representation_key(
+        representation_method,
+        hypothesis,
+        representation_seed,
+    )
+    _add_failed_representation_result(
+        payload,
+        representation_key=representation_key,
+        representation_method=representation_method,
+        hypothesis=hypothesis,
+        representation_seed=representation_seed,
+        reason=reason,
+    )
+    _unavailable_scorer_result(
+        payload,
+        method=f"{method_prefix}_knn",
+        hypothesis=hypothesis,
+        representation_key=representation_key,
+        representation_method=representation_method,
+        scorer="knn_mean_distance",
+        representation_seed=representation_seed,
+        scorer_seed=None,
+        status="failed",
+        reason=reason,
+    )
+    active_scorer_seeds = (
+        (int(representation_seed),)
+        if representation_seed is not None
+        else tuple(int(seed) for seed in scorer_seeds)
+    )
+    for scorer_seed in active_scorer_seeds:
+        _unavailable_scorer_result(
+            payload,
+            method=f"{method_prefix}_isolation_forest",
+            hypothesis=hypothesis,
+            representation_key=representation_key,
+            representation_method=representation_method,
+            scorer="isolation_forest",
+            representation_seed=representation_seed,
+            scorer_seed=scorer_seed,
+            status="failed",
+            reason=reason,
+        )
+    _unavailable_scorer_result(
+        payload,
+        method=f"{method_prefix}_rare_cluster",
+        hypothesis=hypothesis,
+        representation_key=representation_key,
+        representation_method=representation_method,
+        scorer="hdbscan_rare_cluster",
+        representation_seed=representation_seed,
+        scorer_seed=None,
+        status="failed",
+        reason=reason,
+    )
+
+
+def _add_failed_direct_method(
+    payload: dict[str, Any],
+    *,
+    representation_method: str,
+    method: str,
+    hypothesis: str | None,
+    representation_seed: int,
+    scorer: str,
+    error: Exception,
+) -> None:
+    """Declare a failed method whose scorer is native to its representation."""
+
+    reason = f"{type(error).__name__}: {error}"
+    representation_key = _representation_key(
+        representation_method,
+        hypothesis,
+        representation_seed,
+    )
+    _add_failed_representation_result(
+        payload,
+        representation_key=representation_key,
+        representation_method=representation_method,
+        hypothesis=hypothesis,
+        representation_seed=representation_seed,
+        reason=reason,
+    )
+    _unavailable_scorer_result(
+        payload,
+        method=method,
+        hypothesis=hypothesis,
+        representation_key=representation_key,
+        representation_method=representation_method,
+        scorer=scorer,
+        representation_seed=representation_seed,
+        scorer_seed=None,
+        status="failed",
+        reason=reason,
+    )
+
+
+def _add_rare_cluster_scorer(
+    payload: dict[str, Any],
+    *,
+    representation_key: str,
+    representation_method: str,
+    method_prefix: str,
+    hypothesis: str | None,
+    representation_seed: int | None,
+    values: np.ndarray,
+    coordinates: np.ndarray,
+    labels: np.ndarray | None,
+) -> None:
+    """Run the deterministic population scorer once for one representation."""
+
+    method = f"{method_prefix}_rare_cluster"
+    try:
+        scores, cluster_ids, diagnostics = rare_cluster_anomaly_scores(values)
+        method_key = _method_key(
+            method,
+            hypothesis,
+            representation_seed,
+            None,
+        )
+        payload["scorer_diagnostics"].append(
+            {
+                "method_key": method_key,
+                "representation_key": representation_key,
+                "representation": representation_method,
+                "scorer": "hdbscan_rare_cluster",
+                "hypothesis": hypothesis,
+                "representation_seed": representation_seed,
+                "scorer_seed": None,
+                **diagnostics,
+            }
+        )
+        if diagnostics["status"] == "completed":
+            _add_method_artifacts(
+                payload,
+                method,
+                hypothesis,
+                scores,
+                values,
+                labels,
+                seed=representation_seed,
+                representation_key=representation_key,
+                representation_method=representation_method,
+                scorer="hdbscan_rare_cluster",
+                representation_seed=representation_seed,
+                scorer_seed=None,
+                coordinates=coordinates,
+            )
+            for session_id, (cluster_id, cluster_score) in enumerate(
+                zip(cluster_ids, scores)
+            ):
+                payload["score_components"].append(
+                    {
+                        "method_key": method_key,
+                        "representation_key": representation_key,
+                        "scorer": "hdbscan_rare_cluster",
+                        "session_id": int(session_id),
+                        "cluster_id": int(cluster_id),
+                        "is_noise": bool(cluster_id < 0),
+                        "cluster_score": float(cluster_score),
+                    }
+                )
+        else:
+            _unavailable_scorer_result(
+                payload,
+                method=method,
+                hypothesis=hypothesis,
+                representation_key=representation_key,
+                representation_method=representation_method,
+                scorer="hdbscan_rare_cluster",
+                representation_seed=representation_seed,
+                scorer_seed=None,
+                status=str(diagnostics["status"]),
+                reason=str(diagnostics["reason"]),
+            )
+    except Exception as error:
+        _unavailable_scorer_result(
+            payload,
+            method=method,
+            hypothesis=hypothesis,
+            representation_key=representation_key,
+            representation_method=representation_method,
+            scorer="hdbscan_rare_cluster",
+            representation_seed=representation_seed,
+            scorer_seed=None,
+            status="failed",
+            reason=f"{type(error).__name__}: {error}",
+        )
+
+
+def _add_scoring_suite(
+    payload: dict[str, Any],
+    *,
+    representation_method: str,
+    method_prefix: str,
+    hypothesis: str | None,
+    representation: np.ndarray,
+    labels: np.ndarray | None,
+    k: int,
+    scorer_seeds: tuple[int, ...],
+    representation_seed: int | None = None,
+    dimension_names: list[str] | None = None,
+) -> None:
+    """Register one X once, then apply the bounded common scorer battery."""
+
+    values = np.asarray(representation, dtype=float)
+    representation_key = _representation_key(
+        representation_method,
+        hypothesis,
+        representation_seed,
+    )
+    _add_representation_result(
+        payload,
+        representation_key=representation_key,
+        representation_method=representation_method,
+        hypothesis=hypothesis,
+        representation_seed=representation_seed,
+        representation=values,
+        labels=labels,
+        dimension_names=dimension_names,
+    )
+    coordinates = _embedding_2d(values)
+
+    knn_scores = knn_anomaly_scores(values, k=k)
+    _add_method_artifacts(
+        payload,
+        f"{method_prefix}_knn",
+        hypothesis,
+        knn_scores,
+        values,
+        labels,
+        seed=representation_seed,
+        representation_key=representation_key,
+        representation_method=representation_method,
+        scorer="knn_mean_distance",
+        representation_seed=representation_seed,
+        scorer_seed=None,
+        coordinates=coordinates,
+    )
+
+    active_scorer_seeds = (
+        (int(representation_seed),)
+        if representation_seed is not None
+        else tuple(int(seed) for seed in scorer_seeds)
+    )
+    for scorer_seed in active_scorer_seeds:
+        isolation_method = f"{method_prefix}_isolation_forest"
+        try:
+            isolation_scores, isolation_diagnostics = (
+                isolation_forest_anomaly_scores(
+                    values,
+                    random_state=scorer_seed,
+                )
+            )
+            isolation_key = _method_key(
+                isolation_method,
+                hypothesis,
+                representation_seed,
+                scorer_seed,
+            )
+            payload["scorer_diagnostics"].append(
+                {
+                    "method_key": isolation_key,
+                    "representation_key": representation_key,
+                    "representation": representation_method,
+                    "scorer": "isolation_forest",
+                    "hypothesis": hypothesis,
+                    "representation_seed": representation_seed,
+                    "scorer_seed": scorer_seed,
+                    **isolation_diagnostics,
+                }
+            )
+            if isolation_diagnostics["status"] == "completed":
+                _add_method_artifacts(
+                    payload,
+                    isolation_method,
+                    hypothesis,
+                    isolation_scores,
+                    values,
+                    labels,
+                    seed=scorer_seed,
+                    representation_key=representation_key,
+                    representation_method=representation_method,
+                    scorer="isolation_forest",
+                    representation_seed=representation_seed,
+                    scorer_seed=scorer_seed,
+                    coordinates=coordinates,
+                )
+            else:
+                _unavailable_scorer_result(
+                    payload,
+                    method=isolation_method,
+                    hypothesis=hypothesis,
+                    representation_key=representation_key,
+                    representation_method=representation_method,
+                    scorer="isolation_forest",
+                    representation_seed=representation_seed,
+                    scorer_seed=scorer_seed,
+                    status=str(isolation_diagnostics["status"]),
+                    reason=str(isolation_diagnostics["reason"]),
+                )
+        except Exception as error:
+            _unavailable_scorer_result(
+                payload,
+                method=isolation_method,
+                hypothesis=hypothesis,
+                representation_key=representation_key,
+                representation_method=representation_method,
+                scorer="isolation_forest",
+                representation_seed=representation_seed,
+                scorer_seed=scorer_seed,
+                status="failed",
+                reason=f"{type(error).__name__}: {error}",
+            )
+
+    _add_rare_cluster_scorer(
+        payload,
+        representation_key=representation_key,
+        representation_method=representation_method,
+        method_prefix=method_prefix,
+        hypothesis=hypothesis,
+        representation_seed=representation_seed,
+        values=values,
+        coordinates=coordinates,
+        labels=labels,
+    )
 
 
 def _safe_identifier(value: Any) -> str | None:
@@ -1741,6 +2479,393 @@ def train_graphsage(
     return random_primary, trained_primary, losses
 
 
+class PrimaryAttributeDecoder(nn.Module):
+    """Decode observed primary-node attributes from latent graph embeddings."""
+
+    def __init__(self, embedding_dim: int, attribute_dim: int):
+        super().__init__()
+        self.linear = nn.Linear(embedding_dim, attribute_dim)
+
+    def forward(self, embeddings: torch.Tensor) -> torch.Tensor:
+        return self.linear(embeddings)
+
+
+def _sample_relation_examples(
+    edge_index_dict: dict[tuple[str, str, str], torch.Tensor],
+    graph: GraphBundle,
+    x_dict: dict[str, torch.Tensor],
+    *,
+    max_positive_edges: int = DEFAULT_MAX_POSITIVE_EDGES,
+) -> list[tuple[torch.Tensor, torch.Tensor]]:
+    """Sample fixed positive/negative relation examples for one comparison."""
+
+    examples: list[tuple[torch.Tensor, torch.Tensor]] = []
+    for edge_type in graph.forward_edge_types:
+        full_edges = edge_index_dict[edge_type]
+        if full_edges.shape[1] == 0:
+            empty = torch.empty((2, 0), dtype=torch.long)
+            examples.append((empty, empty.clone()))
+            continue
+        n_positive = min(int(full_edges.shape[1]), int(max_positive_edges))
+        selection = torch.randperm(full_edges.shape[1])[:n_positive]
+        positive_edges = full_edges[:, selection]
+        source_count = int(x_dict[edge_type[0]].shape[0])
+        target_count = int(x_dict[edge_type[2]].shape[0])
+        try:
+            negative_edges = negative_sampling(
+                edge_index=full_edges,
+                num_nodes=(source_count, target_count),
+                num_neg_samples=n_positive,
+                method="sparse",
+            )
+        except Exception:
+            negative_edges = torch.stack(
+                [
+                    torch.randint(0, source_count, (n_positive,)),
+                    torch.randint(0, target_count, (n_positive,)),
+                ]
+            )
+        examples.append((positive_edges, negative_edges))
+    return examples
+
+
+def _dominant_primary_errors(
+    *,
+    embeddings: dict[str, torch.Tensor],
+    x_dict: dict[str, torch.Tensor],
+    graph: GraphBundle,
+    attribute_decoder: PrimaryAttributeDecoder,
+    structure_decoder: DynamicLinkDecoder,
+    relation_examples: list[tuple[torch.Tensor, torch.Tensor]],
+    attribute_alpha: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Compute primary-node attribute, sampled-structure, and joint errors."""
+
+    primary_type = graph.primary_node_type
+    primary_embeddings = embeddings[primary_type]
+    # The final channel is an observed-node indicator, not a telemetry
+    # attribute, and is deliberately excluded from reconstruction evidence.
+    attribute_target = x_dict[primary_type][:, :-1]
+    attribute_prediction = attribute_decoder(primary_embeddings)
+    attribute_error = torch.linalg.vector_norm(
+        attribute_target - attribute_prediction,
+        dim=1,
+    )
+
+    structural_sum = torch.zeros(
+        len(primary_embeddings), dtype=torch.float32
+    )
+    structural_count = torch.zeros(
+        len(primary_embeddings), dtype=torch.float32
+    )
+    for relation_index, (edge_type, examples) in enumerate(
+        zip(graph.forward_edge_types, relation_examples)
+    ):
+        positive_edges, negative_edges = examples
+        for edge_index, positive in (
+            (positive_edges, True),
+            (negative_edges, False),
+        ):
+            if edge_index.shape[1] == 0:
+                continue
+            logits = structure_decoder(
+                relation_index,
+                embeddings[edge_type[0]],
+                embeddings[edge_type[2]],
+                edge_index,
+            )
+            targets = (
+                torch.ones_like(logits)
+                if positive
+                else torch.zeros_like(logits)
+            )
+            errors = F.binary_cross_entropy_with_logits(
+                logits,
+                targets,
+                reduction="none",
+            )
+            if edge_type[0] == primary_type:
+                structural_sum.index_add_(0, edge_index[0], errors)
+                structural_count.index_add_(
+                    0, edge_index[0], torch.ones_like(errors)
+                )
+            if edge_type[2] == primary_type:
+                structural_sum.index_add_(0, edge_index[1], errors)
+                structural_count.index_add_(
+                    0, edge_index[1], torch.ones_like(errors)
+                )
+
+    observed = structural_count > 0
+    structural_error = torch.zeros_like(structural_sum)
+    structural_error[observed] = (
+        structural_sum[observed] / structural_count[observed]
+    )
+    if torch.any(observed):
+        neutral_error = torch.median(structural_error[observed])
+        structural_error[~observed] = neutral_error
+
+    joint_error = (
+        float(attribute_alpha) * attribute_error
+        + (1.0 - float(attribute_alpha)) * structural_error
+    )
+    return (
+        attribute_error.detach().cpu().numpy().astype(float),
+        structural_error.detach().cpu().numpy().astype(float),
+        joint_error.detach().cpu().numpy().astype(float),
+    )
+
+
+def train_dominant_style(
+    graph: GraphBundle,
+    row_features: np.ndarray,
+    *,
+    seed: int = SEED,
+    epochs: int = DEFAULT_GRAPH_EPOCHS,
+    hidden_dim: int = DEFAULT_EMBEDDING_DIM,
+    output_dim: int = DEFAULT_EMBEDDING_DIM,
+    attribute_alpha: float = DOMINANT_ATTRIBUTE_ALPHA,
+) -> dict[str, Any]:
+    """Train a sparse heterogeneous DOMINANT-style reconstruction model.
+
+    This is intentionally named ``dominant_style``: classical DOMINANT uses a
+    homogeneous graph and dense adjacency reconstruction.  AutoSignal instead
+    uses typed message passing plus sampled relation reconstruction so the
+    method remains feasible on heterogeneous telemetry graphs.
+    """
+
+    if not 0 <= float(attribute_alpha) <= 1:
+        raise ValueError("attribute_alpha must be in [0, 1].")
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
+    x_dict = _graphsage_x_dict(graph, row_features)
+    primary_target = x_dict[graph.primary_node_type][:, :-1]
+    if primary_target.shape[1] == 0:
+        raise ValueError("DOMINANT-style training requires primary attributes.")
+    edge_index_dict = {
+        edge_type: edge_index.cpu()
+        for edge_type, edge_index in graph.data.edge_index_dict.items()
+    }
+    encoder = DynamicHeteroGraphSAGE(
+        edge_types=list(edge_index_dict),
+        hidden_dim=hidden_dim,
+        output_dim=output_dim,
+    )
+    structure_decoder = DynamicLinkDecoder(
+        len(graph.forward_edge_types), output_dim
+    )
+    attribute_decoder = PrimaryAttributeDecoder(
+        output_dim, int(primary_target.shape[1])
+    )
+
+    # The exact same evaluation pairs score the untrained and trained models.
+    relation_examples = _sample_relation_examples(
+        edge_index_dict,
+        graph,
+        x_dict,
+    )
+
+    encoder.eval()
+    structure_decoder.eval()
+    attribute_decoder.eval()
+    with torch.no_grad():
+        initial_embeddings = encoder(x_dict, edge_index_dict)
+        initial_errors = _dominant_primary_errors(
+            embeddings=initial_embeddings,
+            x_dict=x_dict,
+            graph=graph,
+            attribute_decoder=attribute_decoder,
+            structure_decoder=structure_decoder,
+            relation_examples=relation_examples,
+            attribute_alpha=attribute_alpha,
+        )
+        initial_primary = (
+            initial_embeddings[graph.primary_node_type]
+            .detach()
+            .cpu()
+            .numpy()
+            .astype(np.float32)
+        )
+
+    optimizer = torch.optim.Adam(
+        list(encoder.parameters())
+        + list(structure_decoder.parameters())
+        + list(attribute_decoder.parameters()),
+        lr=0.002,
+    )
+    losses: list[dict[str, float]] = []
+    for _ in range(int(epochs)):
+        encoder.train()
+        structure_decoder.train()
+        attribute_decoder.train()
+        embeddings = encoder(x_dict, edge_index_dict)
+        attribute_prediction = attribute_decoder(
+            embeddings[graph.primary_node_type]
+        )
+        attribute_loss = F.mse_loss(
+            attribute_prediction,
+            primary_target,
+        )
+
+        relation_losses: list[torch.Tensor] = []
+        training_examples = _sample_relation_examples(
+            edge_index_dict,
+            graph,
+            x_dict,
+        )
+        for relation_index, (edge_type, examples) in enumerate(
+            zip(graph.forward_edge_types, training_examples)
+        ):
+            positive_edges, negative_edges = examples
+            if positive_edges.shape[1] == 0 or negative_edges.shape[1] == 0:
+                continue
+            positive_logits = structure_decoder(
+                relation_index,
+                embeddings[edge_type[0]],
+                embeddings[edge_type[2]],
+                positive_edges,
+            )
+            negative_logits = structure_decoder(
+                relation_index,
+                embeddings[edge_type[0]],
+                embeddings[edge_type[2]],
+                negative_edges,
+            )
+            relation_losses.append(
+                F.binary_cross_entropy_with_logits(
+                    positive_logits, torch.ones_like(positive_logits)
+                )
+                + F.binary_cross_entropy_with_logits(
+                    negative_logits, torch.zeros_like(negative_logits)
+                )
+            )
+        structure_loss = (
+            torch.stack(relation_losses).mean()
+            if relation_losses
+            else torch.zeros((), dtype=torch.float32)
+        )
+        loss = (
+            float(attribute_alpha) * attribute_loss
+            + (1.0 - float(attribute_alpha)) * structure_loss
+        )
+        optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(
+            list(encoder.parameters())
+            + list(structure_decoder.parameters())
+            + list(attribute_decoder.parameters()),
+            1.0,
+        )
+        optimizer.step()
+        losses.append(
+            {
+                "total": float(loss.detach()),
+                "attribute": float(attribute_loss.detach()),
+                "structure": float(structure_loss.detach()),
+            }
+        )
+
+    encoder.eval()
+    structure_decoder.eval()
+    attribute_decoder.eval()
+    with torch.no_grad():
+        trained_embeddings = encoder(x_dict, edge_index_dict)
+        trained_errors = _dominant_primary_errors(
+            embeddings=trained_embeddings,
+            x_dict=x_dict,
+            graph=graph,
+            attribute_decoder=attribute_decoder,
+            structure_decoder=structure_decoder,
+            relation_examples=relation_examples,
+            attribute_alpha=attribute_alpha,
+        )
+        trained_primary = (
+            trained_embeddings[graph.primary_node_type]
+            .detach()
+            .cpu()
+            .numpy()
+            .astype(np.float32)
+        )
+
+    return {
+        "untrained_primary_embeddings": initial_primary,
+        "trained_primary_embeddings": trained_primary,
+        "untrained_attribute_error": initial_errors[0],
+        "untrained_structure_error": initial_errors[1],
+        "untrained_joint_error": initial_errors[2],
+        "trained_attribute_error": trained_errors[0],
+        "trained_structure_error": trained_errors[1],
+        "trained_joint_error": trained_errors[2],
+        "losses": losses,
+        "attribute_alpha": float(attribute_alpha),
+        "structure_alpha": float(1.0 - attribute_alpha),
+        "structure_reconstruction": "sampled_typed_relation_bce",
+        "attribute_reconstruction": "primary_node_l2",
+        "secondary_attribute_policy": "constant_inputs_not_reconstructed",
+    }
+
+
+def _primary_values_to_session_max(
+    primary_values: np.ndarray,
+    graph: GraphBundle,
+    sessions: list[list[int]],
+) -> np.ndarray:
+    """Pool unique primary-node evidence to sessions using a fixed maximum."""
+
+    values = np.asarray(primary_values, dtype=float).ravel()
+    if len(values) != len(graph.node_maps[graph.primary_node_type]):
+        raise ValueError("Primary-node values are not graph-aligned.")
+    session_values = []
+    for indices in sessions:
+        primary_indices = np.unique(graph.row_primary_index[indices])
+        session_values.append(float(np.max(values[primary_indices])))
+    result = np.asarray(session_values, dtype=float)
+    if not np.isfinite(result).all():
+        raise ValueError("Session-pooled DOMINANT evidence is not finite.")
+    return result
+
+
+def _dominant_errors_to_session(
+    attribute_error: np.ndarray,
+    structure_error: np.ndarray,
+    joint_error: np.ndarray,
+    graph: GraphBundle,
+    sessions: list[list[int]],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Pool the highest-joint-error primary node and its exact components."""
+
+    attribute_values = np.asarray(attribute_error, dtype=float).ravel()
+    structure_values = np.asarray(structure_error, dtype=float).ravel()
+    joint_values = np.asarray(joint_error, dtype=float).ravel()
+    expected = len(graph.node_maps[graph.primary_node_type])
+    if not (
+        len(attribute_values)
+        == len(structure_values)
+        == len(joint_values)
+        == expected
+    ):
+        raise ValueError("DOMINANT component errors are not graph-aligned.")
+
+    session_attribute = []
+    session_structure = []
+    session_joint = []
+    for indices in sessions:
+        primary_indices = np.unique(graph.row_primary_index[indices])
+        selected = int(
+            primary_indices[np.argmax(joint_values[primary_indices])]
+        )
+        session_attribute.append(float(attribute_values[selected]))
+        session_structure.append(float(structure_values[selected]))
+        session_joint.append(float(joint_values[selected]))
+    outputs = tuple(
+        np.asarray(values, dtype=float)
+        for values in (session_attribute, session_structure, session_joint)
+    )
+    if not all(np.isfinite(values).all() for values in outputs):
+        raise ValueError("Session-pooled DOMINANT evidence is not finite.")
+    return outputs
+
+
 def _primary_to_session_representation(
     primary_embeddings: np.ndarray,
     graph: GraphBundle,
@@ -1750,22 +2875,6 @@ def _primary_to_session_representation(
     row_embeddings = primary_embeddings[graph.row_primary_index]
     session_matrix, _ = _pool_rows(row_embeddings, sessionized_df, sessions)
     return session_matrix
-
-
-def _failed_method(
-    method: str,
-    hypothesis: str | None,
-    error: Exception,
-) -> dict[str, Any]:
-    return {
-        "method": method,
-        "hypothesis": hypothesis,
-        "seed": None,
-        "status": "failed",
-        "error": f"{type(error).__name__}: {error}",
-        "average_precision": None,
-        "reviews_to_first_malicious": None,
-    }
 
 
 def run_autosignal(
@@ -1778,7 +2887,26 @@ def run_autosignal(
     signal_permutations: int = DEFAULT_SIGNAL_PERMUTATIONS,
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> dict[str, Any]:
-    """Run the complete v1 method battery and return one aligned payload."""
+    """Run the complete aligned representation/scorer battery."""
+    if isinstance(k, (bool, np.bool_)) or not isinstance(k, (int, np.integer)):
+        raise ValueError("k must be an integer.")
+    if int(k) < 1:
+        raise ValueError("k must be positive.")
+    k = int(k)
+    if not seeds or any(
+        isinstance(seed, (bool, np.bool_))
+        or not isinstance(seed, (int, np.integer))
+        for seed in seeds
+    ):
+        raise ValueError("seeds must contain at least one integer seed.")
+    seeds = tuple(dict.fromkeys(int(seed) for seed in seeds))
+    if (
+        isinstance(graph_epochs, (bool, np.bool_))
+        or not isinstance(graph_epochs, (int, np.integer))
+        or int(graph_epochs) < 1
+    ):
+        raise ValueError("graph_epochs must be a positive integer.")
+    graph_epochs = int(graph_epochs)
     if (
         isinstance(signal_permutations, (bool, np.bool_))
         or not isinstance(signal_permutations, (int, np.integer))
@@ -1803,12 +2931,17 @@ def run_autosignal(
         "configuration_validation",
         "sessionization",
         "random_baseline",
-        *[f"raw_session_knn::{name}" for name in feature_names],
+        *[f"raw_session_scorers::{name}" for name in feature_names],
         "graph_construction",
-        "typed_structural_stats_knn",
-        *[f"node2vec_knn::seed={seed}" for seed in seeds],
+        "typed_structural_stats_scorers",
+        *[f"node2vec_scorers::seed={seed}" for seed in seeds],
         *[
             f"graphsage::{name}::seed={seed}"
+            for name in feature_names
+            for seed in seeds
+        ],
+        *[
+            f"dominant_style::{name}::seed={seed}"
             for name in feature_names
             for seed in seeds
         ],
@@ -1829,6 +2962,7 @@ def run_autosignal(
         "status": "completed",
         "config": public_config,
         "run_manifest": {
+            "result_schema_version": "2.0",
             "rows": int(len(sessionized_df)),
             "sessions": int(len(sessions)),
             "mode": "development" if labels is not None else "score_only",
@@ -1836,11 +2970,24 @@ def run_autosignal(
             "k": int(k),
             "seeds": [int(seed) for seed in seeds],
             "graph_epochs": int(graph_epochs),
+            "software_environment": _software_environment(),
+            "scorers": [
+                "knn_mean_distance",
+                "isolation_forest",
+                "hdbscan_rare_cluster",
+                "dominant_joint_reconstruction",
+            ],
         },
         "session_manifest": session_manifest,
         "graph_manifest": None,
         "feature_diagnostics": {},
         "method_results": [],
+        "representation_results": [],
+        "representation_stability": [],
+        "_representation_matrices": {},
+        "scorer_diagnostics": [],
+        "score_components": [],
+        "dominant_diagnostics": [],
         "session_scores": [],
         "embeddings": [],
         "signal_config": {
@@ -1867,37 +3014,50 @@ def run_autosignal(
         random_representation,
         labels,
         seed=SEED,
+        representation_key="random_score",
+        representation_method="random_score",
+        scorer="random",
+        representation_seed=None,
+        scorer_seed=SEED,
+        signal_eligible=False,
     )
     completed_stages += 1
 
     for feature_set in cfg["feature_sets"]:
         name = feature_set["name"]
         columns = list(feature_set["columns"])
-        report(completed_stages / total_stages, f"Raw session kNN: {name}")
+        report(completed_stages / total_stages, f"Raw session scorers: {name}")
         try:
-            row_matrix, feature_names, diagnostics = build_row_feature_matrix(
+            row_matrix, row_feature_names, diagnostics = build_row_feature_matrix(
                 sessionized_df, columns, selected_types
             )
             session_matrix, _ = _pool_rows(
                 row_matrix, sessionized_df, sessions
             )
-            scores = knn_anomaly_scores(session_matrix, k=k)
             payload["feature_diagnostics"][name] = {
                 "source_columns": columns,
-                "numeric_features": feature_names,
+                "numeric_features": row_feature_names,
                 "preprocessing": diagnostics,
             }
-            _add_method_artifacts(
+            _add_scoring_suite(
                 payload,
-                "raw_session_knn",
-                name,
-                scores,
-                session_matrix,
-                labels,
+                representation_method="raw_session",
+                method_prefix="raw_session",
+                hypothesis=name,
+                representation=session_matrix,
+                labels=labels,
+                k=k,
+                scorer_seeds=seeds,
+                dimension_names=_pooled_dimension_names(row_feature_names),
             )
         except Exception as error:
-            payload["method_results"].append(
-                _failed_method("raw_session_knn", name, error)
+            _add_failed_scoring_suite(
+                payload,
+                representation_method="raw_session",
+                method_prefix="raw_session",
+                hypothesis=name,
+                scorer_seeds=seeds,
+                error=error,
             )
         completed_stages += 1
 
@@ -1911,6 +3071,50 @@ def run_autosignal(
             "status": "failed",
             "error": f"{type(error).__name__}: {error}",
         }
+        _add_failed_scoring_suite(
+            payload,
+            representation_method="typed_structural_stats",
+            method_prefix="typed_structural_stats",
+            hypothesis=None,
+            scorer_seeds=seeds,
+            error=error,
+        )
+        for seed in seeds:
+            _add_failed_scoring_suite(
+                payload,
+                representation_method="node2vec",
+                method_prefix="node2vec",
+                hypothesis=None,
+                scorer_seeds=seeds,
+                representation_seed=seed,
+                error=error,
+            )
+        for feature_set in cfg["feature_sets"]:
+            name = feature_set["name"]
+            for seed in seeds:
+                for variant in ("graphsage_random", "graphsage_trained"):
+                    _add_failed_scoring_suite(
+                        payload,
+                        representation_method=variant,
+                        method_prefix=variant,
+                        hypothesis=name,
+                        scorer_seeds=seeds,
+                        representation_seed=seed,
+                        error=error,
+                    )
+                for variant in ("untrained", "trained"):
+                    representation_method = f"dominant_style_{variant}"
+                    _add_failed_direct_method(
+                        payload,
+                        representation_method=representation_method,
+                        method=f"{representation_method}_reconstruction",
+                        hypothesis=name,
+                        representation_seed=seed,
+                        scorer="dominant_joint_reconstruction",
+                        error=error,
+                    )
+        # Every skipped graph stage now has a declared failure artifact.
+        completed_stages = total_stages - 1
     completed_stages += 1
 
     if graph is not None:
@@ -1924,19 +3128,26 @@ def run_autosignal(
                     graph, sessionized_df, sessions
                 )
             )
-            structural_scores = knn_anomaly_scores(structural_matrix, k=k)
             payload["structural_features"] = structural_features
-            _add_method_artifacts(
+            _add_scoring_suite(
                 payload,
-                "typed_structural_stats_knn",
-                None,
-                structural_scores,
-                structural_matrix,
-                labels,
+                representation_method="typed_structural_stats",
+                method_prefix="typed_structural_stats",
+                hypothesis=None,
+                representation=structural_matrix,
+                labels=labels,
+                k=k,
+                scorer_seeds=seeds,
+                dimension_names=_pooled_dimension_names(structural_features),
             )
         except Exception as error:
-            payload["method_results"].append(
-                _failed_method("typed_structural_stats_knn", None, error)
+            _add_failed_scoring_suite(
+                payload,
+                representation_method="typed_structural_stats",
+                method_prefix="typed_structural_stats",
+                hypothesis=None,
+                scorer_seeds=seeds,
+                error=error,
             )
         completed_stages += 1
 
@@ -1949,20 +3160,31 @@ def run_autosignal(
                 node2vec_matrix = node2vec_session_representation(
                     graph, sessionized_df, sessions, seed=seed
                 )
-                node2vec_scores = knn_anomaly_scores(node2vec_matrix, k=k)
-                _add_method_artifacts(
+                latent_dimension = max(0, (node2vec_matrix.shape[1] - 1) // 4)
+                _add_scoring_suite(
                     payload,
-                    "node2vec_knn",
-                    None,
-                    node2vec_scores,
-                    node2vec_matrix,
-                    labels,
-                    seed=seed,
+                    representation_method="node2vec",
+                    method_prefix="node2vec",
+                    hypothesis=None,
+                    representation=node2vec_matrix,
+                    labels=labels,
+                    k=k,
+                    scorer_seeds=seeds,
+                    representation_seed=seed,
+                    dimension_names=_pooled_dimension_names(
+                        [f"latent_{index}" for index in range(latent_dimension)]
+                    ),
                 )
             except Exception as error:
-                failed = _failed_method("node2vec_knn", None, error)
-                failed["seed"] = int(seed)
-                payload["method_results"].append(failed)
+                _add_failed_scoring_suite(
+                    payload,
+                    representation_method="node2vec",
+                    method_prefix="node2vec",
+                    hypothesis=None,
+                    scorer_seeds=seeds,
+                    representation_seed=seed,
+                    error=error,
+                )
             completed_stages += 1
 
         for feature_set in cfg["feature_sets"]:
@@ -1973,9 +3195,17 @@ def run_autosignal(
                     sessionized_df, columns, selected_types
                 )
             except Exception as error:
-                payload["method_results"].append(
-                    _failed_method("graphsage_trained", name, error)
-                )
+                for seed in seeds:
+                    for variant in ("graphsage_random", "graphsage_trained"):
+                        _add_failed_scoring_suite(
+                            payload,
+                            representation_method=variant,
+                            method_prefix=variant,
+                            hypothesis=name,
+                            scorer_seeds=seeds,
+                            representation_seed=seed,
+                            error=error,
+                        )
                 completed_stages += seed_count
                 continue
 
@@ -2001,15 +3231,25 @@ def run_autosignal(
                             sessionized_df,
                             sessions,
                         )
-                        scores = knn_anomaly_scores(session_matrix, k=k)
-                        _add_method_artifacts(
+                        latent_dimension = max(
+                            0, (session_matrix.shape[1] - 1) // 4
+                        )
+                        _add_scoring_suite(
                             payload,
-                            variant,
-                            name,
-                            scores,
-                            session_matrix,
-                            labels,
-                            seed=seed,
+                            representation_method=variant,
+                            method_prefix=variant,
+                            hypothesis=name,
+                            representation=session_matrix,
+                            labels=labels,
+                            k=k,
+                            scorer_seeds=seeds,
+                            representation_seed=seed,
+                            dimension_names=_pooled_dimension_names(
+                                [
+                                    f"latent_{index}"
+                                    for index in range(latent_dimension)
+                                ]
+                            ),
                         )
                     payload.setdefault("training_diagnostics", []).append(
                         {
@@ -2020,10 +3260,177 @@ def run_autosignal(
                         }
                     )
                 except Exception as error:
-                    failed = _failed_method("graphsage_trained", name, error)
-                    failed["seed"] = int(seed)
-                    payload["method_results"].append(failed)
+                    for variant in ("graphsage_random", "graphsage_trained"):
+                        _add_failed_scoring_suite(
+                            payload,
+                            representation_method=variant,
+                            method_prefix=variant,
+                            hypothesis=name,
+                            scorer_seeds=seeds,
+                            representation_seed=seed,
+                            error=error,
+                        )
                 completed_stages += 1
+
+        for feature_set in cfg["feature_sets"]:
+            name = feature_set["name"]
+            columns = list(feature_set["columns"])
+            try:
+                row_matrix, _, _ = build_row_feature_matrix(
+                    sessionized_df, columns, selected_types
+                )
+            except Exception as error:
+                for seed in seeds:
+                    for variant in ("untrained", "trained"):
+                        representation_method = f"dominant_style_{variant}"
+                        _add_failed_direct_method(
+                            payload,
+                            representation_method=representation_method,
+                            method=f"{representation_method}_reconstruction",
+                            hypothesis=name,
+                            representation_seed=seed,
+                            scorer="dominant_joint_reconstruction",
+                            error=error,
+                        )
+                    completed_stages += 1
+                continue
+
+            for seed in seeds:
+                report(
+                    completed_stages / total_stages,
+                    f"Training DOMINANT-style: {name} · seed {seed}",
+                )
+                try:
+                    dominant_output = train_dominant_style(
+                        graph,
+                        row_matrix,
+                        seed=seed,
+                        epochs=graph_epochs,
+                    )
+                    for variant in ("untrained", "trained"):
+                        representation_method = f"dominant_style_{variant}"
+                        primary_embeddings = dominant_output[
+                            f"{variant}_primary_embeddings"
+                        ]
+                        session_matrix = _primary_to_session_representation(
+                            primary_embeddings,
+                            graph,
+                            sessionized_df,
+                            sessions,
+                        )
+                        (
+                            attribute_scores,
+                            structure_scores,
+                            joint_scores,
+                        ) = _dominant_errors_to_session(
+                            dominant_output[f"{variant}_attribute_error"],
+                            dominant_output[f"{variant}_structure_error"],
+                            dominant_output[f"{variant}_joint_error"],
+                            graph,
+                            sessions,
+                        )
+                        representation_key = _representation_key(
+                            representation_method,
+                            name,
+                            seed,
+                        )
+                        latent_dimension = max(
+                            0, (session_matrix.shape[1] - 1) // 4
+                        )
+                        _add_representation_result(
+                            payload,
+                            representation_key=representation_key,
+                            representation_method=representation_method,
+                            hypothesis=name,
+                            representation_seed=seed,
+                            representation=session_matrix,
+                            labels=labels,
+                            dimension_names=_pooled_dimension_names(
+                                [
+                                    f"latent_{index}"
+                                    for index in range(latent_dimension)
+                                ]
+                            ),
+                        )
+                        coordinates = _embedding_2d(session_matrix)
+                        method = f"{representation_method}_reconstruction"
+                        _add_method_artifacts(
+                            payload,
+                            method,
+                            name,
+                            joint_scores,
+                            session_matrix,
+                            labels,
+                            seed=seed,
+                            representation_key=representation_key,
+                            representation_method=representation_method,
+                            scorer="dominant_joint_reconstruction",
+                            representation_seed=seed,
+                            scorer_seed=None,
+                            coordinates=coordinates,
+                        )
+                        method_key = _method_key(
+                            method,
+                            name,
+                            seed,
+                            None,
+                        )
+                        for session_id in range(len(session_matrix)):
+                            payload["score_components"].append(
+                                {
+                                    "method_key": method_key,
+                                    "representation_key": representation_key,
+                                    "scorer": "dominant_joint_reconstruction",
+                                    "session_id": int(session_id),
+                                    "attribute_error": float(
+                                        attribute_scores[session_id]
+                                    ),
+                                    "structure_error": float(
+                                        structure_scores[session_id]
+                                    ),
+                                    "joint_score": float(joint_scores[session_id]),
+                                    "session_pooling": "max_unique_primary_node",
+                                }
+                            )
+                    payload["dominant_diagnostics"].append(
+                        {
+                            "method": "dominant_style_trained",
+                            "hypothesis": name,
+                            "seed": int(seed),
+                            "losses": dominant_output["losses"],
+                            "attribute_alpha": dominant_output[
+                                "attribute_alpha"
+                            ],
+                            "structure_alpha": dominant_output[
+                                "structure_alpha"
+                            ],
+                            "structure_reconstruction": dominant_output[
+                                "structure_reconstruction"
+                            ],
+                            "attribute_reconstruction": dominant_output[
+                                "attribute_reconstruction"
+                            ],
+                            "secondary_attribute_policy": dominant_output[
+                                "secondary_attribute_policy"
+                            ],
+                            "session_score_pooling": "max_unique_primary_node",
+                        }
+                    )
+                except Exception as error:
+                    for variant in ("untrained", "trained"):
+                        representation_method = f"dominant_style_{variant}"
+                        _add_failed_direct_method(
+                            payload,
+                            representation_method=representation_method,
+                            method=f"{representation_method}_reconstruction",
+                            hypothesis=name,
+                            representation_seed=seed,
+                            scorer="dominant_joint_reconstruction",
+                            error=error,
+                        )
+                completed_stages += 1
+
+    _finalize_representation_stability(payload)
 
     # Compact session table for analyst triage.
     report(completed_stages / total_stages, "Finalizing analyst payload")
@@ -2055,5 +3462,6 @@ __all__ = [
     "pick_signal_regime",
     "run_autosignal",
     "sessionize",
+    "train_dominant_style",
     "validate_config",
 ]
