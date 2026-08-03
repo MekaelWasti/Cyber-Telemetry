@@ -1,0 +1,19 @@
+{
+  "pilot_id": "phase2_pilot_001",
+  "executed_at_utc": "2026-08-03T12:04:46.921032Z",
+  "execution_commit": "0257766e834369f4557e4c8edc8d377e80de7cc1",
+  "pilot_spec_sha256": "5133edd044b3688a334d25fe8fb90f8516993fcec3d1b508e09c8b246f694436",
+  "dataset_sha256": "b5ca33e01d9447522a2ddd274edf6636ba44e0d3603a344983ed5035970be44c",
+  "engine_sha256": "251c2ec9bd4f1879634b75d1e1bc0409f13239129339cc961b8486078f566db3",
+  "analysis_sha256": "aee5c90a85b0993dac4b03a5ed004c9b0a0e2ba4320d81a9909bdd5499551f02",
+  "runner_sha256": "0451c9a1686c2af77406f84aa3416c63ad708a88e6a24fd4892c5719393d2d39",
+  "requirements_sha256": "f1655c3f58dd1a913660d577edcacdf56a3c27bf0b8408e5aa2488fdb560f2d7",
+  "full_artifact_root": "artifacts/pilots/phase2/phase2_pilot_001_5133edd044b3",
+  "payload_sha256": {
+    "acme_dev_head_1000_repro_a": "824aa158b7197f6b908329193bace49e0d1cb1373831f9edca8c3f0a0c88280a",
+    "acme_dev_head_1000_repro_b": "bc8d69cdcfa863ce06803da99ab28050152c030d880a4996ab586b503a44b527",
+    "acme_dev_head_5000_multiseed": "af1da9db1f8d83ca63e0d0a87dc3bd8dc61329738ce3d426b521506d80e4bc8a"
+  },
+  "payload_hash_verification": "passed",
+  "confirmation_eligible": false
+}

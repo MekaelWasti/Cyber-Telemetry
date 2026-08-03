@@ -1,0 +1,35 @@
+{
+  "passed": true,
+  "groups": [
+    {
+      "group": "acme_dev_head_1000_seed42",
+      "case_ids": [
+        "acme_dev_head_1000_repro_a",
+        "acme_dev_head_1000_repro_b"
+      ],
+      "passed": true,
+      "checks": [
+        {
+          "name": "same_seed_scores_allclose",
+          "passed": true,
+          "detail": 16422
+        },
+        {
+          "name": "same_seed_rankings_identical",
+          "passed": true,
+          "detail": 17
+        },
+        {
+          "name": "same_seed_score_components_allclose",
+          "passed": true,
+          "detail": [
+            "cluster_score",
+            "attribute_error",
+            "structure_error",
+            "joint_score"
+          ]
+        }
+      ]
+    }
+  ]
+}

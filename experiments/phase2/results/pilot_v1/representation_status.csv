@@ -1,0 +1,27 @@
+pilot_id,case_id,representation_key,representation,hypothesis,representation_seed,status,reason,n_sessions,n_dimensions,labels_available
+phase2_pilot_001,acme_dev_head_1000_repro_a,raw_session::Process Resource Consumption Profile,raw_session,Process Resource Consumption Profile,,completed,,966,17,True
+phase2_pilot_001,acme_dev_head_1000_repro_a,typed_structural_stats,typed_structural_stats,,,completed,,966,21,True
+phase2_pilot_001,acme_dev_head_1000_repro_a,node2vec::rep_seed=42,node2vec,,42.0,completed,,966,129,True
+phase2_pilot_001,acme_dev_head_1000_repro_a,graphsage_random::Process Resource Consumption Profile::rep_seed=42,graphsage_random,Process Resource Consumption Profile,42.0,completed,,966,129,True
+phase2_pilot_001,acme_dev_head_1000_repro_a,graphsage_trained::Process Resource Consumption Profile::rep_seed=42,graphsage_trained,Process Resource Consumption Profile,42.0,completed,,966,129,True
+phase2_pilot_001,acme_dev_head_1000_repro_a,dominant_style_untrained::Process Resource Consumption Profile::rep_seed=42,dominant_style_untrained,Process Resource Consumption Profile,42.0,completed,,966,129,True
+phase2_pilot_001,acme_dev_head_1000_repro_a,dominant_style_trained::Process Resource Consumption Profile::rep_seed=42,dominant_style_trained,Process Resource Consumption Profile,42.0,completed,,966,129,True
+phase2_pilot_001,acme_dev_head_1000_repro_b,raw_session::Process Resource Consumption Profile,raw_session,Process Resource Consumption Profile,,completed,,966,17,True
+phase2_pilot_001,acme_dev_head_1000_repro_b,typed_structural_stats,typed_structural_stats,,,completed,,966,21,True
+phase2_pilot_001,acme_dev_head_1000_repro_b,node2vec::rep_seed=42,node2vec,,42.0,completed,,966,129,True
+phase2_pilot_001,acme_dev_head_1000_repro_b,graphsage_random::Process Resource Consumption Profile::rep_seed=42,graphsage_random,Process Resource Consumption Profile,42.0,completed,,966,129,True
+phase2_pilot_001,acme_dev_head_1000_repro_b,graphsage_trained::Process Resource Consumption Profile::rep_seed=42,graphsage_trained,Process Resource Consumption Profile,42.0,completed,,966,129,True
+phase2_pilot_001,acme_dev_head_1000_repro_b,dominant_style_untrained::Process Resource Consumption Profile::rep_seed=42,dominant_style_untrained,Process Resource Consumption Profile,42.0,completed,,966,129,True
+phase2_pilot_001,acme_dev_head_1000_repro_b,dominant_style_trained::Process Resource Consumption Profile::rep_seed=42,dominant_style_trained,Process Resource Consumption Profile,42.0,completed,,966,129,True
+phase2_pilot_001,acme_dev_head_5000_multiseed,raw_session::Process Resource Consumption Profile,raw_session,Process Resource Consumption Profile,,completed,,4385,17,True
+phase2_pilot_001,acme_dev_head_5000_multiseed,typed_structural_stats,typed_structural_stats,,,completed,,4385,21,True
+phase2_pilot_001,acme_dev_head_5000_multiseed,node2vec::rep_seed=42,node2vec,,42.0,completed,,4385,129,True
+phase2_pilot_001,acme_dev_head_5000_multiseed,node2vec::rep_seed=137,node2vec,,137.0,completed,,4385,129,True
+phase2_pilot_001,acme_dev_head_5000_multiseed,graphsage_random::Process Resource Consumption Profile::rep_seed=42,graphsage_random,Process Resource Consumption Profile,42.0,completed,,4385,129,True
+phase2_pilot_001,acme_dev_head_5000_multiseed,graphsage_trained::Process Resource Consumption Profile::rep_seed=42,graphsage_trained,Process Resource Consumption Profile,42.0,completed,,4385,129,True
+phase2_pilot_001,acme_dev_head_5000_multiseed,graphsage_random::Process Resource Consumption Profile::rep_seed=137,graphsage_random,Process Resource Consumption Profile,137.0,completed,,4385,129,True
+phase2_pilot_001,acme_dev_head_5000_multiseed,graphsage_trained::Process Resource Consumption Profile::rep_seed=137,graphsage_trained,Process Resource Consumption Profile,137.0,completed,,4385,129,True
+phase2_pilot_001,acme_dev_head_5000_multiseed,dominant_style_untrained::Process Resource Consumption Profile::rep_seed=42,dominant_style_untrained,Process Resource Consumption Profile,42.0,completed,,4385,129,True
+phase2_pilot_001,acme_dev_head_5000_multiseed,dominant_style_trained::Process Resource Consumption Profile::rep_seed=42,dominant_style_trained,Process Resource Consumption Profile,42.0,completed,,4385,129,True
+phase2_pilot_001,acme_dev_head_5000_multiseed,dominant_style_untrained::Process Resource Consumption Profile::rep_seed=137,dominant_style_untrained,Process Resource Consumption Profile,137.0,completed,,4385,129,True
+phase2_pilot_001,acme_dev_head_5000_multiseed,dominant_style_trained::Process Resource Consumption Profile::rep_seed=137,dominant_style_trained,Process Resource Consumption Profile,137.0,completed,,4385,129,True

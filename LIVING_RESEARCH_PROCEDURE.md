@@ -5,10 +5,10 @@ what remains exploratory, and why each experiment exists.
 
 **Last updated:** 2026-08-03
 
-**Current phase:** Phase 2 — pilot for correctness and feasibility
+**Current phase:** Phase 3 — freeze the exact experiment matrix
 
-**Immediate objective:** Define and run the deliberately small pilot manifest;
-use it to validate runtimes and assumptions before freezing the final matrix.
+**Immediate objective:** Convert the passed Phase 2 feasibility evidence into a
+versioned, immutable final matrix without reading the sealed holdout.
 
 > This is a living document. Update the status tables and current decisions in
 > place. Preserve the decision log at the end. Do not append competing roadmaps.
@@ -110,7 +110,7 @@ Use these rules whenever the project changes:
 | Cluster-level anomaly scorer | Implemented | HDBSCAN rarity/separation scorer with explicit abstention |
 | Isolation Forest scorer | Implemented | Tests whether kNN is the wrong pointwise scorer |
 | DOMINANT-style attributed graph method | Implemented | Tests anomaly-oriented joint attribute/structure reconstruction |
-| CoLA-style contrastive graph method | Gated addition | Tests node–neighborhood incompatibility if still needed |
+| CoLA-style contrastive graph method | Deferred; gate not activated | Would test node–neighborhood incompatibility if a future context-sampler gate passes |
 | Exact final experiment matrix | Not frozen | Defined after implementation and pilot validation |
 | Untouched confirmation run | Not started | Runs once after all choices are frozen |
 
@@ -288,7 +288,7 @@ the populated Streamlit result view also renders without exceptions.
 
 ### Phase 2 — Pilot for correctness and feasibility
 
-**Status:** Current
+**Status:** Completed for the locally available ACME development schema
 
 Run a deliberately small pilot across representative datasets/configurations.
 The pilot may answer only design questions:
@@ -317,12 +317,14 @@ Add CoLA only when all are true:
 
 Otherwise record CoLA as deferred.
 
-**Exit condition:** Feasible methods, metrics, datasets, slices, and runtimes are
-known well enough to predeclare the final experiment.
+**Exit condition:** Met for the locally available ACME development schema. The
+technical contract, reproducibility, two-seed stability path, runtime, and
+memory budget passed. Cross-schema portability remains untested because the two
+other catalog configurations have no matching local data.
 
 ### Phase 3 — Freeze the exact experiment matrix
 
-**Status:** Pending
+**Status:** Current
 
 This is when the exact matrix—not merely its general shape—is frozen.
 
@@ -486,8 +488,8 @@ The correct hypotheses are therefore:
 | P1.5 | Select and implement one cluster-level scorer | Implemented | HDBSCAN rare/separated-population formula, abstention policy, and synthetic population test |
 | P1.6 | Implement Isolation Forest scorer adapter | Implemented | Same-\(X\), deterministic score-direction unit test |
 | P1.7 | Implement DOMINANT adapter and controls | Implemented | Sparse heterogeneous trained/untrained paths, aligned component rows, integration test |
-| P2.1 | Run small correctness/feasibility pilot | Pending | Pilot manifest; not a final result |
-| P2.2 | Decide CoLA through the declared gate | Pending | Decision-log entry |
+| P2.1 | Run small correctness/feasibility pilot | Completed | [`experiments/phase2/results/pilot_v1/REPORT.md`](experiments/phase2/results/pilot_v1/REPORT.md); spec SHA-256 `5133edd044b3…` |
+| P2.2 | Decide CoLA through the declared gate | Completed — deferred | Gate was not activated; no label-blind context sampler is frozen or tested |
 | P3.1 | Write immutable final matrix specification | Pending | Versioned experiment manifest |
 | P4.1 | Execute and cache frozen matrix | Pending | Tidy result table + failure table |
 | P5.1 | Run paired statistical analysis | Pending | Comparison/uncertainty tables |
@@ -622,3 +624,27 @@ artifact_paths
   cannot determine pilot pass/fail or method inclusion.
 - CoLA remains deferred unless its separate label-blind context and feasibility
   gates pass; poor DOMINANT retrieval alone cannot activate it.
+
+### 2026-08-03 — Phase 2 pilot v1 passed
+
+- Executed the frozen spec with SHA-256
+  `5133edd044b3688a334d25fe8fb90f8516993fcec3d1b508e09c8b246f694436`.
+- All three case contracts passed strict serialization, key cardinality,
+  canonical-session alignment, finite output, DOMINANT component identity,
+  usable relation-example, HDBSCAN policy, and runtime-diagnostic checks.
+- The two independent 1,000-row seed-42 runs reproduced 17 completed score
+  vectors, their exact rankings, and all cluster/DOMINANT score components.
+- The 5,000-row two-seed case produced the five predeclared cross-seed stability
+  rows. Across the pilot, 65 method outcomes completed, two HDBSCAN population
+  scorers abstained under their fixed assumptions, and none failed.
+- Total measured wall time was 261.26 seconds. Peak measured RSS was 1.54 GiB.
+  On the 5,000-row case, coordinate projection was the largest instrumented
+  cost (84.89 seconds); cache representations/coordinates in the final runner.
+- Primary-node structural coverage passed the provisional CoLA data gate:
+  non-isolated fraction was 1.0, degree-at-least-two fraction was at least
+  0.606, and maximum incident-edge share was at most 0.0147. CoLA nevertheless
+  remains deferred because no label-blind context sampler/control is frozen or
+  tested, and adding it is not necessary to freeze the existing bounded suite.
+- The sealed test parquet and combined train/test parquet were not used. Pilot
+  retrieval metrics remain exploratory and were not interpreted for inclusion.
+- Phase 2 is complete for ACME; Phase 3 now freezes the exact final matrix.

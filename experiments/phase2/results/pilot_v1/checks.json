@@ -1,0 +1,296 @@
+[
+  {
+    "passed": true,
+    "checks": [
+      {
+        "name": "strict_json",
+        "passed": true,
+        "detail": "json.dumps(..., allow_nan=False) succeeded"
+      },
+      {
+        "name": "method_row_count",
+        "passed": true,
+        "detail": 18
+      },
+      {
+        "name": "representation_row_count",
+        "passed": true,
+        "detail": 7
+      },
+      {
+        "name": "stability_row_count",
+        "passed": true,
+        "detail": 0
+      },
+      {
+        "name": "unique_method_keys",
+        "passed": true,
+        "detail": 18
+      },
+      {
+        "name": "unique_representation_keys",
+        "passed": true,
+        "detail": 7
+      },
+      {
+        "name": "no_hard_method_failures",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "no_hard_representation_failures",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "completed_outputs_aligned",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "completed_outputs_finite",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "dimension_names_aligned",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "dominant_component_formula",
+        "passed": true,
+        "detail": 1932
+      },
+      {
+        "name": "dominant_components_aligned",
+        "passed": true,
+        "detail": 1932
+      },
+      {
+        "name": "hdbscan_statuses_declared",
+        "passed": true,
+        "detail": {
+          "abstained": 1,
+          "completed": 4,
+          "degenerate": 0,
+          "unavailable": 0
+        }
+      },
+      {
+        "name": "hdbscan_noise_score_zero",
+        "passed": true,
+        "detail": 512
+      },
+      {
+        "name": "dominant_has_usable_relation_examples",
+        "passed": true,
+        "detail": 1
+      },
+      {
+        "name": "runtime_diagnostics_finite",
+        "passed": true,
+        "detail": 43
+      }
+    ],
+    "case_id": "acme_dev_head_1000_repro_a",
+    "wall_seconds": 41.28900780000549,
+    "peak_rss_bytes": 794427392
+  },
+  {
+    "passed": true,
+    "checks": [
+      {
+        "name": "strict_json",
+        "passed": true,
+        "detail": "json.dumps(..., allow_nan=False) succeeded"
+      },
+      {
+        "name": "method_row_count",
+        "passed": true,
+        "detail": 18
+      },
+      {
+        "name": "representation_row_count",
+        "passed": true,
+        "detail": 7
+      },
+      {
+        "name": "stability_row_count",
+        "passed": true,
+        "detail": 0
+      },
+      {
+        "name": "unique_method_keys",
+        "passed": true,
+        "detail": 18
+      },
+      {
+        "name": "unique_representation_keys",
+        "passed": true,
+        "detail": 7
+      },
+      {
+        "name": "no_hard_method_failures",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "no_hard_representation_failures",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "completed_outputs_aligned",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "completed_outputs_finite",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "dimension_names_aligned",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "dominant_component_formula",
+        "passed": true,
+        "detail": 1932
+      },
+      {
+        "name": "dominant_components_aligned",
+        "passed": true,
+        "detail": 1932
+      },
+      {
+        "name": "hdbscan_statuses_declared",
+        "passed": true,
+        "detail": {
+          "abstained": 1,
+          "completed": 4,
+          "degenerate": 0,
+          "unavailable": 0
+        }
+      },
+      {
+        "name": "hdbscan_noise_score_zero",
+        "passed": true,
+        "detail": 512
+      },
+      {
+        "name": "dominant_has_usable_relation_examples",
+        "passed": true,
+        "detail": 1
+      },
+      {
+        "name": "runtime_diagnostics_finite",
+        "passed": true,
+        "detail": 43
+      }
+    ],
+    "case_id": "acme_dev_head_1000_repro_b",
+    "wall_seconds": 28.42569089999597,
+    "peak_rss_bytes": 842838016
+  },
+  {
+    "passed": true,
+    "checks": [
+      {
+        "name": "strict_json",
+        "passed": true,
+        "detail": "json.dumps(..., allow_nan=False) succeeded"
+      },
+      {
+        "name": "method_row_count",
+        "passed": true,
+        "detail": 31
+      },
+      {
+        "name": "representation_row_count",
+        "passed": true,
+        "detail": 12
+      },
+      {
+        "name": "stability_row_count",
+        "passed": true,
+        "detail": 5
+      },
+      {
+        "name": "unique_method_keys",
+        "passed": true,
+        "detail": 31
+      },
+      {
+        "name": "unique_representation_keys",
+        "passed": true,
+        "detail": 12
+      },
+      {
+        "name": "no_hard_method_failures",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "no_hard_representation_failures",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "completed_outputs_aligned",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "completed_outputs_finite",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "dimension_names_aligned",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "dominant_component_formula",
+        "passed": true,
+        "detail": 17540
+      },
+      {
+        "name": "dominant_components_aligned",
+        "passed": true,
+        "detail": 17540
+      },
+      {
+        "name": "hdbscan_statuses_declared",
+        "passed": true,
+        "detail": {
+          "abstained": 0,
+          "completed": 8,
+          "degenerate": 0,
+          "unavailable": 0
+        }
+      },
+      {
+        "name": "hdbscan_noise_score_zero",
+        "passed": true,
+        "detail": 7221
+      },
+      {
+        "name": "dominant_has_usable_relation_examples",
+        "passed": true,
+        "detail": 2
+      },
+      {
+        "name": "runtime_diagnostics_finite",
+        "passed": true,
+        "detail": 74
+      }
+    ],
+    "case_id": "acme_dev_head_5000_multiseed",
+    "wall_seconds": 191.5448233000061,
+    "peak_rss_bytes": 1656496128
+  }
+]

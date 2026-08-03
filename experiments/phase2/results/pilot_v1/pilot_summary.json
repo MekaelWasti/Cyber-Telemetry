@@ -1,0 +1,98 @@
+{
+  "pilot_id": "phase2_pilot_001",
+  "study_phase": "phase2_pilot",
+  "evidence_role": "correctness_feasibility_only",
+  "confirmation_eligible": false,
+  "overall_pass": true,
+  "case_contract_pass": true,
+  "same_seed_reproducibility_pass": true,
+  "resource_budget_pass": true,
+  "total_wall_seconds": 261.25952200000756,
+  "peak_rss_bytes": 1656496128,
+  "case_summaries": [
+    {
+      "case_id": "acme_dev_head_1000_repro_a",
+      "source_rows": 1000,
+      "canonical_sessions": 966,
+      "malicious_sessions": 8,
+      "wall_seconds": 41.28900780000549,
+      "peak_rss_bytes": 794427392
+    },
+    {
+      "case_id": "acme_dev_head_1000_repro_b",
+      "source_rows": 1000,
+      "canonical_sessions": 966,
+      "malicious_sessions": 8,
+      "wall_seconds": 28.42569089999597,
+      "peak_rss_bytes": 842838016
+    },
+    {
+      "case_id": "acme_dev_head_5000_multiseed",
+      "source_rows": 5000,
+      "canonical_sessions": 4385,
+      "malicious_sessions": 21,
+      "wall_seconds": 191.5448233000061,
+      "peak_rss_bytes": 1656496128
+    }
+  ],
+  "method_status_counts": [
+    {
+      "case_id": "acme_dev_head_1000_repro_a",
+      "status": "abstained",
+      "count": 1
+    },
+    {
+      "case_id": "acme_dev_head_1000_repro_a",
+      "status": "completed",
+      "count": 17
+    },
+    {
+      "case_id": "acme_dev_head_1000_repro_b",
+      "status": "abstained",
+      "count": 1
+    },
+    {
+      "case_id": "acme_dev_head_1000_repro_b",
+      "status": "completed",
+      "count": 17
+    },
+    {
+      "case_id": "acme_dev_head_5000_multiseed",
+      "status": "completed",
+      "count": 31
+    }
+  ],
+  "hdbscan_status_counts": [
+    {
+      "case_id": "acme_dev_head_1000_repro_a",
+      "status": "completed",
+      "count": 4
+    },
+    {
+      "case_id": "acme_dev_head_1000_repro_a",
+      "status": "abstained",
+      "count": 1
+    },
+    {
+      "case_id": "acme_dev_head_1000_repro_b",
+      "status": "completed",
+      "count": 4
+    },
+    {
+      "case_id": "acme_dev_head_1000_repro_b",
+      "status": "abstained",
+      "count": 1
+    },
+    {
+      "case_id": "acme_dev_head_5000_multiseed",
+      "status": "completed",
+      "count": 8
+    }
+  ],
+  "cola_decision": "deferred",
+  "cola_reasons": [
+    "No label-blind CoLA context-sampler prototype is frozen or tested.",
+    "Retrieval performance was intentionally not used to activate CoLA."
+  ],
+  "performance_interpretation_performed": false
+}
