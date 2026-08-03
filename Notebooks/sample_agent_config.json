@@ -1,4 +1,5 @@
-{
+[
+  {
   "timestamp_col": "process_started",
   "existing_session_id_col": null,
   "session_group_cols": [
@@ -156,4 +157,297 @@
       "File target paths for I/O operations are missing, preventing file-access graphs."
     ]
   }
+  },
+  {
+  "headerless": true,
+  "timestamp_col": "Stime",
+  "timestamp_col_index": 28,
+  "existing_session_id_col": null,
+  "session_group_cols": [
+    "srcip"
+  ],
+  "session_group_col_indices": [
+    0
+  ],
+  "graph_relations": [
+    {
+      "relation_name": "communicates_with",
+      "source_node_type": "network_endpoint",
+      "source_column": "srcip",
+      "source_column_index": 0,
+      "target_node_type": "network_endpoint",
+      "target_column": "dstip",
+      "target_column_index": 2,
+      "directed": true,
+      "meaning": "Represents network communication from source IP to destination IP."
+    },
+    {
+      "relation_name": "accesses_port",
+      "source_node_type": "network_endpoint",
+      "source_column": "srcip",
+      "source_column_index": 0,
+      "target_node_type": "port",
+      "target_column": "dsport",
+      "target_column_index": 3,
+      "directed": true,
+      "meaning": "Links a source endpoint to the destination port it accessed."
+    }
+  ],
+  "label_col": "Label",
+  "label_col_index": 48,
+  "malicious_label_values": [
+    1
+  ],
+  "selected_columns": [
+    {
+      "column": "sbytes",
+      "column_index": 7,
+      "type": "numeric",
+      "reason": "Measures total bytes transmitted by the source."
+    },
+    {
+      "column": "dbytes",
+      "column_index": 8,
+      "type": "numeric",
+      "reason": "Measures total bytes received from the destination."
+    },
+    {
+      "column": "Sload",
+      "column_index": 14,
+      "type": "numeric",
+      "reason": "Source transmission rate in bits per second."
+    },
+    {
+      "column": "Dload",
+      "column_index": 15,
+      "type": "numeric",
+      "reason": "Destination transmission rate in bits per second."
+    },
+    {
+      "column": "tcprtt",
+      "column_index": 32,
+      "type": "numeric",
+      "reason": "TCP round trip time."
+    },
+    {
+      "column": "synack",
+      "column_index": 33,
+      "type": "numeric",
+      "reason": "Time between SYN and SYN_ACK."
+    },
+    {
+      "column": "ackdat",
+      "column_index": 34,
+      "type": "numeric",
+      "reason": "Time between SYN_ACK and ACK."
+    },
+    {
+      "column": "Sintpkt",
+      "column_index": 30,
+      "type": "numeric",
+      "reason": "Average time between source packets."
+    },
+    {
+      "column": "Dintpkt",
+      "column_index": 31,
+      "type": "numeric",
+      "reason": "Average time between destination packets."
+    },
+    {
+      "column": "ct_srv_src",
+      "column_index": 40,
+      "type": "numeric",
+      "reason": "Connections to the same service from the source."
+    },
+    {
+      "column": "ct_srv_dst",
+      "column_index": 41,
+      "type": "numeric",
+      "reason": "Connections to the same service to the destination."
+    },
+    {
+      "column": "ct_dst_ltm",
+      "column_index": 42,
+      "type": "numeric",
+      "reason": "Connections to the destination IP in the last window."
+    },
+    {
+      "column": "ct_src_ ltm",
+      "column_index": 43,
+      "type": "numeric",
+      "reason": "Connections from the source IP in the last window."
+    }
+  ],
+  "feature_sets": [
+    {
+      "name": "Payload Size and Transmission Throughput",
+      "columns": [
+        "sbytes",
+        "dbytes",
+        "Sload",
+        "Dload"
+      ],
+      "rationale": "Measures volume of data exchanged and transmission speeds."
+    },
+    {
+      "name": "TCP Handshake and Packet Timing",
+      "columns": [
+        "tcprtt",
+        "synack",
+        "ackdat",
+        "Sintpkt",
+        "Dintpkt"
+      ],
+      "rationale": "Analyzes round-trip times and packet arrival delays."
+    },
+    {
+      "name": "Historical Connection Frequency Context",
+      "columns": [
+        "ct_srv_src",
+        "ct_srv_dst",
+        "ct_dst_ltm",
+        "ct_src_ ltm"
+      ],
+      "rationale": "Evaluates recent connection counts to spot scanning or targeting."
+    }
+  ],
+  "quality": {
+    "behavioral_feature_quality": "high",
+    "topology_quality": "medium",
+    "summary": "Detailed flow timing, throughput, and frequency counts with clear 0-based column index mappings provided.",
+    "limitations": [
+      "No host-level processes or user identities available."
+    ]
+  }
+},
+{
+  "timestamp_col": null,
+  "existing_session_id_col": null,
+  "session_group_cols": [],
+  "graph_relations": [
+    {
+      "relation_name": "accesses_port",
+      "source_node_type": "flow",
+      "source_column": "$row_id",
+      "target_node_type": "port",
+      "target_column": " Destination Port",
+      "directed": true,
+      "meaning": "Links a distinct network flow observation to the destination port it accessed."
+    }
+  ],
+  "label_col": " Label",
+  "malicious_label_values": [
+    "Bot"
+  ],
+  "selected_columns": [
+    {
+      "column": "Total Length of Fwd Packets",
+      "type": "numeric",
+      "reason": "Measures outbound payload size, useful for detecting data exfiltration."
+    },
+    {
+      "column": " Total Length of Bwd Packets",
+      "type": "numeric",
+      "reason": "Measures inbound payload size, indicating response volume or downloaded files."
+    },
+    {
+      "column": "Flow Bytes/s",
+      "type": "numeric",
+      "reason": "Captures the transmission throughput in bytes per second."
+    },
+    {
+      "column": " Flow Packets/s",
+      "type": "numeric",
+      "reason": "Captures the packet throughput, highlighting rapid scanning or brute-force behavior."
+    },
+    {
+      "column": " Flow Duration",
+      "type": "numeric",
+      "reason": "Indicates the total lifespan of the connection."
+    },
+    {
+      "column": " Flow IAT Mean",
+      "type": "numeric",
+      "reason": "Measures the average time between consecutive packets, highlighting rhythmic automated patterns."
+    },
+    {
+      "column": "Idle Mean",
+      "type": "numeric",
+      "reason": "Captures the average time a connection sits idle before more data is sent, typical of beaconing."
+    },
+    {
+      "column": "Active Mean",
+      "type": "numeric",
+      "reason": "Captures the average time a connection is actively transferring data."
+    },
+    {
+      "column": "FIN Flag Count",
+      "type": "numeric",
+      "reason": "Indicates connection termination attempts."
+    },
+    {
+      "column": " SYN Flag Count",
+      "type": "numeric",
+      "reason": "Indicates connection establishment attempts, useful for identifying SYN floods or port scans."
+    },
+    {
+      "column": " RST Flag Count",
+      "type": "numeric",
+      "reason": "Indicates forcefully rejected connections."
+    },
+    {
+      "column": " PSH Flag Count",
+      "type": "numeric",
+      "reason": "Indicates pushed payloads, common in data transfers and some exploits."
+    },
+    {
+      "column": " ACK Flag Count",
+      "type": "numeric",
+      "reason": "Indicates packet acknowledgments, establishing communication continuity."
+    }
+  ],
+  "feature_sets": [
+    {
+      "name": "Network Flow Volume and Throughput",
+      "columns": [
+        "Total Length of Fwd Packets",
+        " Total Length of Bwd Packets",
+        "Flow Bytes/s",
+        " Flow Packets/s"
+      ],
+      "rationale": "Measures the physical size and transmission speed of data to detect heavy downloads, data exfiltration, or denial-of-service floods."
+    },
+    {
+      "name": "Flow Lifecycle and Inter-Packet Timing",
+      "columns": [
+        " Flow Duration",
+        " Flow IAT Mean",
+        "Idle Mean",
+        "Active Mean"
+      ],
+      "rationale": "Analyzes the temporal footprint of the flow to identify automated long-lived beaconing, C2 heartbeat rhythms, or stealthy low-and-slow scanning."
+    },
+    {
+      "name": "TCP Flag and Handshake Analysis",
+      "columns": [
+        "FIN Flag Count",
+        " SYN Flag Count",
+        " RST Flag Count",
+        " PSH Flag Count",
+        " ACK Flag Count"
+      ],
+      "rationale": "Evaluates the distribution of TCP control flags to spot anomalous handshake behavior, port scanning techniques, or disrupted communication."
+    }
+  ],
+  "quality": {
+    "behavioral_feature_quality": "high",
+    "topology_quality": "low",
+    "summary": "The dataset contains deep, highly descriptive statistical features for analyzing flow behavior, timing, and TCP flags. However, it completely lacks IP addresses, hostnames, and timestamps, preventing meaningful sessionization and severely limiting graph construction to just flow-to-port connections.",
+    "limitations": [
+      "No source or destination IP addresses are present, making endpoint graphs impossible.",
+      "No timestamps are provided, preventing temporal ordering and sessioning.",
+      "Many column names contain inconsistent leading whitespace."
+    ]
+  }
 }
+]

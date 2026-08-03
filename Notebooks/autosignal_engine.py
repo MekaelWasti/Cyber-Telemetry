@@ -33,6 +33,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
+from scipy import sparse
 from scipy.spatial import cKDTree
 from sklearn.decomposition import PCA
 from sklearn.metrics import average_precision_score
@@ -52,6 +53,16 @@ DEFAULT_GRAPH_EPOCHS = 4
 DEFAULT_EMBEDDING_DIM = 32
 DEFAULT_MAX_POSITIVE_EDGES = 3_000
 DEFAULT_NODE2VEC_PAIRS = 200_000
+DEFAULT_SIGNAL_PERMUTATIONS = 199
+SIGNAL_TAIL_FRACTION = 0.05
+SIGNAL_MIN_TAIL_SIZE = 10
+SIGNAL_ALPHA = 0.05
+SIGNAL_AMPLIFICATION_ALPHA = 0.5
+SIGNAL_REGIME_NAMES = (
+    "Neighborhood-supported",
+    "Locally Contrastive",
+    "Intermediate-scale",
+)
 
 ALLOWED_FEATURE_TYPES = {"numeric", "boolean", "category", "timestamp"}
 REQUIRED_TOP_LEVEL_KEYS = {
@@ -555,6 +566,341 @@ def knn_anomaly_scores(matrix: np.ndarray, k: int = DEFAULT_K) -> np.ndarray:
     return np.asarray(distances[:, 1:], dtype=float).mean(axis=1)
 
 
+def build_session_knn_operator(
+    matrix: np.ndarray,
+    k: int = DEFAULT_K,
+) -> tuple[sparse.csr_matrix, sparse.csr_matrix]:
+    """Build a symmetric session kNN graph and row-normalized operator.
+
+    The graph must be constructed from the same session representation used
+    for intrinsic kNN scoring. Sparse matrices stay internal to the engine;
+    only the derived, JSON-safe signal channels are returned to the frontend.
+    """
+
+    values = np.asarray(matrix, dtype=np.float32)
+    if values.ndim != 2:
+        raise ValueError("Session representation must be a 2D matrix.")
+    if not np.isfinite(values).all():
+        raise ValueError("Session representation must contain finite values.")
+    if isinstance(k, (bool, np.bool_)) or not isinstance(k, (int, np.integer)):
+        raise ValueError("Signal graph k must be an integer.")
+    if int(k) < 1:
+        raise ValueError("Signal graph k must be positive.")
+
+    n_sessions = len(values)
+    if n_sessions <= 1:
+        empty = sparse.csr_matrix(
+            (n_sessions, n_sessions),
+            dtype=float,
+        )
+        return empty, empty.copy()
+
+    effective_k = min(int(k), n_sessions - 1)
+    _, neighbor_candidates = cKDTree(values).query(
+        values,
+        k=effective_k + 1,
+        workers=-1,
+    )
+    neighbor_candidates = np.asarray(
+        neighbor_candidates,
+        dtype=np.int64,
+    )
+    if neighbor_candidates.ndim == 1:
+        neighbor_candidates = neighbor_candidates[:, None]
+
+    # cKDTree does not guarantee that self is the first result when duplicate
+    # vectors tie at distance zero. Remove the actual row index explicitly.
+    selected_neighbors = np.empty(
+        (n_sessions, effective_k),
+        dtype=np.int64,
+    )
+    for session_id, candidates in enumerate(neighbor_candidates):
+        without_self = candidates[candidates != session_id]
+        if len(without_self) < effective_k:
+            raise RuntimeError(
+                "kNN query did not return enough non-self session neighbors."
+            )
+        selected_neighbors[session_id] = without_self[:effective_k]
+
+    rows = np.repeat(np.arange(n_sessions), effective_k)
+    columns = selected_neighbors.reshape(-1)
+    adjacency = sparse.csr_matrix(
+        (
+            np.ones(len(rows), dtype=float),
+            (rows, columns),
+        ),
+        shape=(n_sessions, n_sessions),
+    )
+
+    # Use the union of directed kNN edges so neighborhood support is symmetric.
+    adjacency = adjacency.maximum(adjacency.T).tocsr()
+    adjacency.setdiag(0)
+    adjacency.eliminate_zeros()
+
+    degree = np.asarray(adjacency.sum(axis=1)).ravel()
+    inverse_degree = np.divide(
+        1.0,
+        degree,
+        out=np.zeros_like(degree, dtype=float),
+        where=degree > 0,
+    )
+    propagation = (sparse.diags(inverse_degree) @ adjacency).tocsr()
+    return adjacency, propagation
+
+
+def compute_signal_diagnostic_channels(
+    propagation: sparse.spmatrix,
+    scores: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Compute graph-relative diagnostic channels for intrinsic scores."""
+
+    intrinsic = np.asarray(scores, dtype=float).ravel()
+    if propagation.shape != (len(intrinsic), len(intrinsic)):
+        raise ValueError("Propagation operator and score vector are not aligned.")
+    if not np.isfinite(intrinsic).all():
+        raise ValueError("Intrinsic anomaly scores must be finite.")
+
+    neighbor_support = np.asarray(propagation @ intrinsic).ravel()
+    second_hop_support = np.asarray(
+        propagation @ neighbor_support
+    ).ravel()
+    local_contrast = intrinsic - neighbor_support
+    return {
+        "intrinsic": intrinsic,
+        "neighbor_support": neighbor_support,
+        "second_hop_support": second_hop_support,
+        "local_contrast": local_contrast,
+        "local_contrast_magnitude": np.abs(local_contrast),
+        "pocket": neighbor_support - second_hop_support,
+        "supported_candidate": (
+            SIGNAL_AMPLIFICATION_ALPHA * intrinsic
+            + (1.0 - SIGNAL_AMPLIFICATION_ALPHA) * neighbor_support
+        ),
+    }
+
+
+def _signal_regime_statistics(
+    propagation: sparse.spmatrix,
+    scores: np.ndarray,
+    *,
+    tail_fraction: float,
+    min_tail_size: int,
+) -> np.ndarray:
+    """Return one targeted statistic for each candidate signal regime."""
+
+    intrinsic = np.asarray(scores, dtype=float).ravel()
+    if len(intrinsic) < 2 or not np.isfinite(intrinsic).all():
+        raise ValueError(
+            "Signal diagnosis requires at least two finite anomaly scores."
+        )
+    if propagation.shape != (len(intrinsic), len(intrinsic)):
+        raise ValueError("Propagation operator and score vector are not aligned.")
+    if not 0 < tail_fraction <= 1:
+        raise ValueError("tail_fraction must be in (0, 1].")
+    if min_tail_size < 1:
+        raise ValueError("min_tail_size must be positive.")
+
+    score_std = float(np.std(intrinsic))
+    if score_std <= np.finfo(float).eps:
+        raise ValueError(
+            "Signal diagnosis requires non-constant anomaly scores."
+        )
+
+    standardized = (intrinsic - np.mean(intrinsic)) / score_std
+    neighbor_support = np.asarray(propagation @ standardized).ravel()
+    second_hop_support = np.asarray(
+        propagation @ neighbor_support
+    ).ravel()
+
+    tail_size = min(
+        len(standardized),
+        max(
+            int(min_tail_size),
+            int(np.ceil(tail_fraction * len(standardized))),
+        ),
+    )
+    intrinsic_tail = np.argpartition(
+        standardized,
+        len(standardized) - tail_size,
+    )[-tail_size:]
+    neighborhood_tail = np.argpartition(
+        neighbor_support,
+        len(neighbor_support) - tail_size,
+    )[-tail_size:]
+
+    return np.asarray(
+        [
+            # Do intrinsically anomalous sessions have anomalous neighbors?
+            np.mean(neighbor_support[intrinsic_tail]),
+            # Do intrinsically anomalous sessions rise above normal neighbors?
+            np.mean(
+                (standardized - neighbor_support)[intrinsic_tail]
+            ),
+            # Do the strongest one-hop neighborhoods dilute at two hops?
+            np.mean(
+                (
+                    neighbor_support
+                    - second_hop_support
+                )[neighborhood_tail]
+            ),
+        ],
+        dtype=float,
+    )
+
+
+def pick_signal_regime(
+    propagation: sparse.spmatrix,
+    scores: np.ndarray,
+    *,
+    n_permutations: int = DEFAULT_SIGNAL_PERMUTATIONS,
+    tail_fraction: float = SIGNAL_TAIL_FRACTION,
+    min_tail_size: int = SIGNAL_MIN_TAIL_SIZE,
+    alpha: float = SIGNAL_ALPHA,
+    random_state: int = SEED,
+) -> dict[str, Any]:
+    """Choose a signal regime using a label-blind family-wise null test."""
+
+    if (
+        isinstance(n_permutations, (bool, np.bool_))
+        or not isinstance(n_permutations, (int, np.integer))
+        or int(n_permutations) < 99
+    ):
+        raise ValueError("n_permutations must be an integer of at least 99.")
+    if not 0 < alpha < 1:
+        raise ValueError("alpha must be in (0, 1).")
+
+    intrinsic = np.asarray(scores, dtype=float).ravel()
+    observed = _signal_regime_statistics(
+        propagation,
+        intrinsic,
+        tail_fraction=tail_fraction,
+        min_tail_size=min_tail_size,
+    )
+
+    rng = np.random.default_rng(random_state)
+    null_statistics = np.empty(
+        (int(n_permutations), len(SIGNAL_REGIME_NAMES)),
+        dtype=float,
+    )
+    for permutation_index in range(int(n_permutations)):
+        null_statistics[permutation_index] = _signal_regime_statistics(
+            propagation,
+            rng.permutation(intrinsic),
+            tail_fraction=tail_fraction,
+            min_tail_size=min_tail_size,
+        )
+
+    null_mean = null_statistics.mean(axis=0)
+    null_std = null_statistics.std(axis=0, ddof=1)
+    safe_null_std = np.where(
+        null_std > np.finfo(float).eps,
+        null_std,
+        np.inf,
+    )
+    effect_z = (observed - null_mean) / safe_null_std
+
+    raw_p = (
+        1
+        + np.sum(
+            null_statistics >= observed[None, :],
+            axis=0,
+        )
+    ) / (int(n_permutations) + 1)
+
+    # The maximum standardized null statistic controls false selection across
+    # all three regime hypotheses in one family.
+    standardized_null = (
+        null_statistics - null_mean
+    ) / safe_null_std
+    max_null = np.max(standardized_null, axis=1)
+    familywise_p = np.asarray(
+        [
+            (
+                1
+                + np.sum(max_null >= candidate_effect)
+            )
+            / (int(n_permutations) + 1)
+            for candidate_effect in effect_z
+        ],
+        dtype=float,
+    )
+    passes = (effect_z > 0) & (familywise_p <= alpha)
+
+    evidence = [
+        {
+            "regime": regime,
+            "observed_statistic": float(observed[index]),
+            "null_mean": float(null_mean[index]),
+            "null_std": float(null_std[index]),
+            "effect_z": float(effect_z[index]),
+            "raw_p": float(raw_p[index]),
+            "familywise_p": float(familywise_p[index]),
+            "passes": bool(passes[index]),
+        }
+        for index, regime in enumerate(SIGNAL_REGIME_NAMES)
+    ]
+
+    if np.any(passes):
+        eligible = np.flatnonzero(passes)
+        winner_index = int(eligible[np.argmax(effect_z[eligible])])
+        regime = SIGNAL_REGIME_NAMES[winner_index]
+    else:
+        winner_index = None
+        regime = "No useful organization"
+
+    return {
+        "regime": regime,
+        "winner_index": winner_index,
+        "evidence": evidence,
+        "n_permutations": int(n_permutations),
+        "tail_fraction": float(tail_fraction),
+        "min_tail_size": int(min_tail_size),
+        "alpha": float(alpha),
+        "random_state": int(random_state),
+    }
+
+
+def apply_matched_amplification(
+    scores: np.ndarray,
+    channels: dict[str, np.ndarray],
+    regime: str,
+    *,
+    alpha: float = SIGNAL_AMPLIFICATION_ALPHA,
+) -> np.ndarray:
+    """Apply at most one score transform matched to the diagnosed regime."""
+
+    intrinsic = np.asarray(scores, dtype=float).ravel()
+    if not 0 <= alpha <= 1:
+        raise ValueError("Amplification alpha must be in [0, 1].")
+
+    if regime == "Neighborhood-supported":
+        transformed = (
+            alpha * intrinsic
+            + (1.0 - alpha)
+            * np.asarray(channels["neighbor_support"], dtype=float).ravel()
+        )
+    elif regime == "Locally Contrastive":
+        transformed = np.asarray(
+            channels["local_contrast"],
+            dtype=float,
+        ).ravel()
+    elif regime == "Intermediate-scale":
+        transformed = np.asarray(
+            channels["pocket"],
+            dtype=float,
+        ).ravel()
+    elif regime == "No useful organization":
+        transformed = intrinsic.copy()
+    else:
+        raise ValueError(f"Unknown signal regime: {regime}")
+
+    if transformed.shape != intrinsic.shape or not np.isfinite(
+        transformed
+    ).all():
+        raise ValueError("Matched score transform is not aligned and finite.")
+    return transformed
+
+
 def _method_metrics(
     method: str,
     scores: np.ndarray,
@@ -627,6 +973,160 @@ def _embedding_2d(matrix: np.ndarray) -> np.ndarray:
         return PCA(n_components=2, random_state=SEED).fit_transform(matrix)
 
 
+def _signal_metric_values(
+    method: str,
+    scores: np.ndarray,
+    labels: np.ndarray,
+    hypothesis: str | None,
+    seed: int | None,
+) -> dict[str, Any]:
+    """Return only evaluation values from the existing ranking contract."""
+
+    metrics = _method_metrics(
+        method,
+        scores,
+        labels,
+        hypothesis,
+        seed,
+    )
+    metadata = {"method", "hypothesis", "seed", "status"}
+    return {
+        key: value
+        for key, value in metrics.items()
+        if key not in metadata
+    }
+
+
+def _descending_min_ranks(scores: np.ndarray) -> np.ndarray:
+    """Return one-based descending ranks, giving tied scores the minimum rank."""
+
+    return (
+        pd.Series(np.asarray(scores, dtype=float))
+        .rank(ascending=False, method="min")
+        .to_numpy(dtype=np.int64)
+    )
+
+
+def _add_signal_artifacts(
+    payload: dict[str, Any],
+    *,
+    method_key: str,
+    method: str,
+    hypothesis: str | None,
+    seed: int | None,
+    representation: np.ndarray,
+    scores: np.ndarray,
+    labels: np.ndarray | None,
+) -> None:
+    """Diagnose and serialize signal structure for one method representation."""
+
+    config = payload["signal_config"]
+    _, propagation = build_session_knn_operator(
+        representation,
+        k=int(config["k"]),
+    )
+    channels = compute_signal_diagnostic_channels(
+        propagation,
+        scores,
+    )
+    diagnosis = pick_signal_regime(
+        propagation,
+        scores,
+        n_permutations=int(config["n_permutations"]),
+        tail_fraction=float(config["tail_fraction"]),
+        min_tail_size=int(config["min_tail_size"]),
+        alpha=float(config["alpha"]),
+        random_state=int(config["random_state"]),
+    )
+    matched_scores = apply_matched_amplification(
+        scores,
+        channels,
+        diagnosis["regime"],
+        alpha=float(config["amplification_alpha"]),
+    )
+
+    intrinsic_ranks = _descending_min_ranks(scores)
+    matched_ranks = _descending_min_ranks(matched_scores)
+    rank_gain = intrinsic_ranks - matched_ranks
+
+    if labels is None:
+        evaluation = {
+            "labels_available": False,
+            "intrinsic": None,
+            "matched": None,
+        }
+    else:
+        evaluation = {
+            "labels_available": True,
+            "intrinsic": _signal_metric_values(
+                method,
+                scores,
+                labels,
+                hypothesis,
+                seed,
+            ),
+            "matched": _signal_metric_values(
+                method,
+                matched_scores,
+                labels,
+                hypothesis,
+                seed,
+            ),
+        }
+
+    payload["signal_results"].append(
+        {
+            "method_key": method_key,
+            "method": method,
+            "hypothesis": hypothesis,
+            "seed": seed,
+            "status": "completed",
+            "regime": diagnosis["regime"],
+            "winner_index": diagnosis["winner_index"],
+            "evidence": diagnosis["evidence"],
+            "evaluation": evaluation,
+        }
+    )
+
+    for session_id in range(len(scores)):
+        label = (
+            str(labels[session_id])
+            if labels is not None
+            else "unknown"
+        )
+        payload["signal_scores"].append(
+            {
+                "method_key": method_key,
+                "method": method,
+                "hypothesis": hypothesis,
+                "seed": seed,
+                "session_id": int(session_id),
+                "label": label,
+                "intrinsic": float(channels["intrinsic"][session_id]),
+                "neighbor_support": float(
+                    channels["neighbor_support"][session_id]
+                ),
+                "second_hop_support": float(
+                    channels["second_hop_support"][session_id]
+                ),
+                "local_contrast": float(
+                    channels["local_contrast"][session_id]
+                ),
+                "local_contrast_magnitude": float(
+                    channels["local_contrast_magnitude"][session_id]
+                ),
+                "pocket": float(channels["pocket"][session_id]),
+                "supported_candidate": float(
+                    channels["supported_candidate"][session_id]
+                ),
+                "matched_score": float(matched_scores[session_id]),
+                "intrinsic_rank": int(intrinsic_ranks[session_id]),
+                "matched_rank": int(matched_ranks[session_id]),
+                "rank_gain": int(rank_gain[session_id]),
+            }
+        )
+
+
 def _add_method_artifacts(
     payload: dict[str, Any],
     method: str,
@@ -666,6 +1166,45 @@ def _add_method_artifacts(
                 "x": float(coordinate[0]),
                 "y": float(coordinate[1]),
                 "label": label,
+            }
+        )
+
+    # A random score baseline is not a representation-plus-kNN method. Building
+    # a graph from its one-dimensional random scores would manufacture
+    # neighborhood support, so it is deliberately excluded from diagnosis.
+    if method == "random_baseline":
+        return
+
+    try:
+        _add_signal_artifacts(
+            payload,
+            method_key=key,
+            method=method,
+            hypothesis=hypothesis,
+            seed=seed,
+            representation=representation,
+            scores=scores,
+            labels=labels,
+        )
+    except Exception as error:
+        # Signal diagnosis is a downstream interpretation layer. A degenerate
+        # or tiny representation must not erase an otherwise valid method run.
+        payload["signal_results"].append(
+            {
+                "method_key": key,
+                "method": method,
+                "hypothesis": hypothesis,
+                "seed": seed,
+                "status": "unavailable",
+                "regime": None,
+                "winner_index": None,
+                "evidence": [],
+                "evaluation": {
+                    "labels_available": labels is not None,
+                    "intrinsic": None,
+                    "matched": None,
+                },
+                "error": f"{type(error).__name__}: {error}",
             }
         )
 
@@ -1236,9 +1775,20 @@ def run_autosignal(
     k: int = DEFAULT_K,
     seeds: tuple[int, ...] = (SEED,),
     graph_epochs: int = DEFAULT_GRAPH_EPOCHS,
+    signal_permutations: int = DEFAULT_SIGNAL_PERMUTATIONS,
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> dict[str, Any]:
     """Run the complete v1 method battery and return one aligned payload."""
+    if (
+        isinstance(signal_permutations, (bool, np.bool_))
+        or not isinstance(signal_permutations, (int, np.integer))
+        or int(signal_permutations) < 99
+    ):
+        raise ValueError(
+            "signal_permutations must be an integer of at least 99."
+        )
+    signal_permutations = int(signal_permutations)
+
     def report(progress: float, message: str) -> None:
         if progress_callback is not None:
             progress_callback(float(np.clip(progress, 0.0, 1.0)), message)
@@ -1293,6 +1843,17 @@ def run_autosignal(
         "method_results": [],
         "session_scores": [],
         "embeddings": [],
+        "signal_config": {
+            "k": int(k),
+            "n_permutations": signal_permutations,
+            "tail_fraction": SIGNAL_TAIL_FRACTION,
+            "min_tail_size": SIGNAL_MIN_TAIL_SIZE,
+            "alpha": SIGNAL_ALPHA,
+            "amplification_alpha": SIGNAL_AMPLIFICATION_ALPHA,
+            "random_state": SEED,
+        },
+        "signal_results": [],
+        "signal_scores": [],
     }
 
     report(completed_stages / total_stages, "Scoring random baseline")
@@ -1485,9 +2046,13 @@ def run_autosignal(
 
 __all__ = [
     "ConfigValidationError",
+    "apply_matched_amplification",
+    "build_session_knn_operator",
     "build_typed_graph",
+    "compute_signal_diagnostic_channels",
     "dataframe_profile",
     "load_df_slice",
+    "pick_signal_regime",
     "run_autosignal",
     "sessionize",
     "validate_config",

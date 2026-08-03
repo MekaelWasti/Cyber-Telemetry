@@ -1,3 +1,14 @@
+July 30th 2026
+
+datasets being used
+https://www.kaggle.com/datasets/mrwellsdavid/unsw-nb15/data
+https://www.kaggle.com/datasets/chethuhn/network-intrusion-dataset/data?select=Friday-WorkingHours-Morning.pcap_ISCX.csv
+https://github.com/splunk/botsv3
+
+take note that an important to do is that the agent when given a dataset to parse, should also be given the feature list somehow other wise it will just be guessing
+
+
+
 July 28 2026
 
 To-do Today
