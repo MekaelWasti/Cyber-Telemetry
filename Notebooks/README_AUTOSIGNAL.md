@@ -43,6 +43,24 @@ disabled until `RUN_BATCH=True`.
 C:\Python314\python.exe -m unittest Notebooks\test_autosignal_engine.py -v
 ```
 
+## Phase 2 pilot
+
+The immutable correctness/feasibility specification is
+`../experiments/phase2/pilot_v1.json`. Preflight it without running models:
+
+```powershell
+C:\Python314\python.exe Notebooks\run_phase2_pilot.py `
+  --spec experiments\phase2\pilot_v1.json `
+  --preflight-only
+```
+
+Remove `--preflight-only` to execute the frozen pilot. It reads only the ACME
+development parquet; the test parquet and combined train/test parquet are
+explicitly excluded. Full evidence payloads are written under
+`artifacts/pilots/phase2/`, while compact technical summaries are mirrored to
+`experiments/phase2/results/pilot_v1/`. Pilot AP and Recall values are
+exploratory and cannot select methods or support confirmation claims.
+
 ## Execution contract
 
 - Sessions are created once and shared by every method.

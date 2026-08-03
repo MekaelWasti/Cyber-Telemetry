@@ -25,6 +25,7 @@ from autosignal_analysis import (
     rare_cluster_anomaly_scores,
     representation_stability,
 )
+from run_phase2_pilot import check_payload
 
 
 def renamed_telemetry(rows=80):
@@ -281,6 +282,31 @@ class AutoSignalEngineTests(unittest.TestCase):
         self.assertGreater(first[50:].mean(), first[:50].mean())
         self.assertTrue(np.isfinite(first).all())
 
+    def test_rare_cluster_scorer_declares_balanced_and_tiny_abstentions(self):
+        rng = np.random.default_rng(19)
+        balanced = np.vstack(
+            [
+                rng.normal(-4, 0.05, size=(20, 2)),
+                rng.normal(4, 0.05, size=(20, 2)),
+            ]
+        )
+        scores, _, diagnostics = rare_cluster_anomaly_scores(
+            balanced,
+            min_cluster_size=5,
+            dominance_ratio=1.25,
+        )
+        self.assertEqual(diagnostics["status"], "abstained")
+        self.assertIn("dominant", diagnostics["reason"].lower())
+        np.testing.assert_array_equal(scores, np.zeros(len(balanced)))
+
+        tiny_scores, assignments, tiny_diagnostics = rare_cluster_anomaly_scores(
+            np.arange(12, dtype=float).reshape(6, 2),
+            min_cluster_size=5,
+        )
+        self.assertEqual(tiny_diagnostics["status"], "degenerate")
+        np.testing.assert_array_equal(tiny_scores, np.zeros(6))
+        np.testing.assert_array_equal(assignments, np.full(6, -1))
+
     def test_representation_stability_is_rotation_invariant(self):
         rng = np.random.default_rng(13)
         first = rng.normal(size=(24, 2))
@@ -467,6 +493,13 @@ class AutoSignalEngineTests(unittest.TestCase):
         environment = result["run_manifest"]["software_environment"]
         self.assertRegex(environment["python"], r"^\d+\.\d+\.\d+$")
         self.assertIsNotNone(environment["packages"]["scikit-learn"])
+        self.assertGreater(result["run_manifest"]["total_runtime_seconds"], 0)
+        runtime_diagnostics = pd.DataFrame(result["runtime_diagnostics"])
+        self.assertFalse(runtime_diagnostics.empty)
+        self.assertTrue(
+            np.isfinite(runtime_diagnostics["seconds"].to_numpy(dtype=float)).all()
+        )
+        self.assertTrue((runtime_diagnostics["seconds"] >= 0).all())
 
         method_results = pd.DataFrame(result["method_results"])
         self.assertFalse(method_results["status"].eq("failed").any())
@@ -584,6 +617,35 @@ class AutoSignalEngineTests(unittest.TestCase):
             rtol=1e-6,
             atol=1e-6,
         )
+        self.assertTrue(result["dominant_diagnostics"])
+        for diagnostics in result["dominant_diagnostics"]:
+            relation_examples = diagnostics["relation_example_diagnostics"]
+            self.assertTrue(relation_examples)
+            self.assertTrue(
+                any(
+                    item["evaluation_positive_examples"] > 0
+                    and item["evaluation_negative_examples"] > 0
+                    for item in relation_examples
+                )
+            )
+            neighborhood = diagnostics["primary_neighborhood_diagnostics"]
+            self.assertGreaterEqual(neighborhood["non_isolated_fraction"], 0)
+            self.assertLessEqual(neighborhood["non_isolated_fraction"], 1)
+            self.assertGreaterEqual(
+                neighborhood["degree_at_least_two_fraction"], 0
+            )
+            self.assertLessEqual(
+                neighborhood["degree_at_least_two_fraction"], 1
+            )
+        pilot_validation = check_payload(
+            result,
+            {
+                "method_rows": 40,
+                "representation_rows": 17,
+                "stability_rows": 0,
+            },
+        )
+        self.assertTrue(pilot_validation["passed"], pilot_validation)
         json.dumps(result, allow_nan=False)
 
     def test_score_only_mode_is_label_isolated(self):

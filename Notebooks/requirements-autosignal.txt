@@ -2,6 +2,7 @@
 # Keep this file synchronized with the software-environment field in frozen runs.
 numpy==2.4.6
 pandas==2.3.3
+psutil==7.2.2
 pyarrow==24.0.0
 scipy==1.18.0
 scikit-learn==1.9.0

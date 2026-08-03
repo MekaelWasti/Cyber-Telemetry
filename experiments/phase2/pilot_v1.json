@@ -1,0 +1,136 @@
+{
+  "schema_version": "autosignal.phase2_pilot_spec.v1",
+  "pilot_id": "phase2_pilot_001",
+  "frozen_at_utc": "2026-08-03T11:52:41Z",
+  "checkpoint_commit": "217366a5b8154497a5a583d501c510c5f14611b7",
+  "study_phase": "phase2_pilot",
+  "evidence_role": "correctness_feasibility_only",
+  "confirmation_eligible": false,
+  "purpose": [
+    "Verify the real-data representation/scorer contract and failure accounting.",
+    "Measure wall time and peak memory at two bounded engineering scales.",
+    "Exercise same-seed reproducibility and different-seed stability.",
+    "Check DOMINANT relation evidence and HDBSCAN applicability without tuning."
+  ],
+  "prohibited_uses": [
+    "final_performance_estimate",
+    "confirmation",
+    "method_selection_by_average_precision",
+    "method_selection_by_recall",
+    "hyperparameter_selection",
+    "case_selection_by_umap_or_visual_appeal"
+  ],
+  "dataset": {
+    "path": "Data/train-process_uber_summary.parquet",
+    "sha256": "b5ca33e01d9447522a2ddd274edf6636ba44e0d3603a344983ed5035970be44c",
+    "bytes": 114639204,
+    "rows": 668337,
+    "partition_role": "development_pilot",
+    "physical_order_is_temporal": false
+  },
+  "excluded_sources": [
+    {
+      "path": "Data/test-process_uber_summary.parquet",
+      "reason": "sealed_holdout"
+    },
+    {
+      "path": "Data/process_uber_summary.parquet",
+      "reason": "contains_sealed_holdout"
+    }
+  ],
+  "configuration": {
+    "path": "Notebooks/sample_agent_config.json",
+    "source_sha256": "c0c548451e6384a43856f153e4f240ea4212c0e5012cf4191345ffdcc3444863",
+    "config_index": 0,
+    "feature_sets": [
+      "Process Resource Consumption Profile"
+    ],
+    "preserve_all_graph_relations": true
+  },
+  "cases": [
+    {
+      "case_id": "acme_dev_head_1000_repro_a",
+      "slice": {
+        "kind": "physical_head",
+        "rows": 1000
+      },
+      "parameters": {
+        "k": 15,
+        "seeds": [42],
+        "graph_epochs": 2,
+        "signal_permutations": 99
+      },
+      "reproducibility_group": "acme_dev_head_1000_seed42",
+      "expected_contract": {
+        "method_rows": 18,
+        "representation_rows": 7,
+        "stability_rows": 0
+      }
+    },
+    {
+      "case_id": "acme_dev_head_1000_repro_b",
+      "slice": {
+        "kind": "physical_head",
+        "rows": 1000
+      },
+      "parameters": {
+        "k": 15,
+        "seeds": [42],
+        "graph_epochs": 2,
+        "signal_permutations": 99
+      },
+      "reproducibility_group": "acme_dev_head_1000_seed42",
+      "expected_contract": {
+        "method_rows": 18,
+        "representation_rows": 7,
+        "stability_rows": 0
+      }
+    },
+    {
+      "case_id": "acme_dev_head_5000_multiseed",
+      "slice": {
+        "kind": "physical_head",
+        "rows": 5000
+      },
+      "parameters": {
+        "k": 15,
+        "seeds": [42, 137],
+        "graph_epochs": 2,
+        "signal_permutations": 99
+      },
+      "reproducibility_group": null,
+      "expected_contract": {
+        "method_rows": 31,
+        "representation_rows": 12,
+        "stability_rows": 5
+      }
+    }
+  ],
+  "technical_acceptance": {
+    "strict_json": true,
+    "canonical_session_alignment": true,
+    "finite_completed_scores": true,
+    "unique_method_and_representation_keys": true,
+    "allow_hdbscan_abstained_or_degenerate": true,
+    "allow_hard_method_failures": false,
+    "same_seed_score_rtol": 1e-6,
+    "same_seed_score_atol": 1e-6,
+    "maximum_total_wall_seconds": 5400,
+    "maximum_peak_rss_fraction_of_total_memory": 0.8,
+    "performance_thresholds": null
+  },
+  "cola_gate": {
+    "default": "deferred",
+    "performance_does_not_activate_gate": true,
+    "requires_real_dominant_contract_pass": true,
+    "requires_primary_non_isolated_fraction": 0.8,
+    "requires_primary_degree_at_least_two_fraction": 0.5,
+    "maximum_single_primary_incident_edge_fraction": 0.5,
+    "requires_label_blind_context_sampler_prototype": true,
+    "requires_no_schedule_displacement": true
+  },
+  "artifact_layout": {
+    "root": "artifacts/pilots/phase2",
+    "tracked_summary_root": "experiments/phase2/results/pilot_v1"
+  }
+}

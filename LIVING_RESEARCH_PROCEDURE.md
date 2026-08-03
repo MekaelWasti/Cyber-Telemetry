@@ -478,7 +478,7 @@ The correct hypotheses are therefore:
 
 | ID | Task | Status | Evidence/exit artifact |
 |---|---|---|---|
-| P0.1 | Preserve current engine behavior and tests | Implemented | 13-test engine regression suite passes on 2026-08-03 |
+| P0.1 | Preserve current engine behavior and tests | Implemented | 14-test engine regression suite passes on 2026-08-03 |
 | P1.1 | Implement full-space neighbor-purity evaluation | Implemented | Deterministic permutation-reference unit test |
 | P1.2 | Implement label silhouette with validity guards | Implemented | Full-space evaluator unit test; undefined values serialize as `null` |
 | P1.3 | Implement cross-validated linear probe | Implemented | Stratified out-of-fold development probe; grouped/temporal probe remains a stated limitation |
@@ -597,7 +597,7 @@ artifact_paths
 
 ### 2026-08-03 — Phase 1 verification completed
 
-- The full 13-test engine suite passed, including label isolation, deterministic
+- The full 14-test engine suite passed, including label isolation, deterministic
   scorer behavior, exact score/session alignment, trained/untrained DOMINANT
   component accounting, explicit graph-failure retention, and strict JSON
   serialization.
@@ -606,3 +606,19 @@ artifact_paths
   cluster, and DOMINANT diagnostics.
 - Phase 1 is closed. The next action is the bounded Phase 2 pilot, not a final
   matrix freeze and not a broad model or hyperparameter search.
+
+### 2026-08-03 — Phase 2 pilot v1 predeclared
+
+- Froze `experiments/phase2/pilot_v1.json` before model execution.
+- Limited real-data evidence to physical-head engineering slices from the ACME
+  development parquet. These slices are explicitly non-temporal and cannot be
+  used as confirmation evidence.
+- Explicitly prohibited reading the sealed test parquet or the combined
+  train/test parquet during the pilot.
+- Selected one feature hypothesis, a same-seed repeat at 1,000 rows, and a
+  two-seed 5,000-row scale/stability case. This tests correctness,
+  reproducibility, runtime, memory, and applicability without broad search.
+- Predeclared that AP, Recall@K, UMAP appearance, and other performance outcomes
+  cannot determine pilot pass/fail or method inclusion.
+- CoLA remains deferred unless its separate label-blind context and feasibility
+  gates pass; poor DOMINANT retrieval alone cannot activate it.

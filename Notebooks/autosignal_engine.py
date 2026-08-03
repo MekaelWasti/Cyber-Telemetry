@@ -23,6 +23,7 @@ import platform
 import random
 import re
 import tempfile
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import combinations
@@ -92,6 +93,32 @@ def _software_environment() -> dict[str, Any]:
         "python": platform.python_version(),
         "packages": packages,
     }
+
+
+def _record_runtime(
+    payload: dict[str, Any],
+    *,
+    stage: str,
+    seconds: float,
+    status: str = "completed",
+    representation: str | None = None,
+    scorer: str | None = None,
+    hypothesis: str | None = None,
+    representation_seed: int | None = None,
+    scorer_seed: int | None = None,
+) -> None:
+    payload["runtime_diagnostics"].append(
+        {
+            "stage": stage,
+            "status": status,
+            "seconds": float(max(seconds, 0.0)),
+            "representation": representation,
+            "scorer": scorer,
+            "hypothesis": hypothesis,
+            "representation_seed": representation_seed,
+            "scorer_seed": scorer_seed,
+        }
+    )
 
 
 SIGNAL_REGIME_NAMES = (
@@ -1449,6 +1476,7 @@ def _add_representation_result(
     if dimension_names is not None and len(dimension_names) != values.shape[1]:
         raise ValueError("Representation dimension names are not aligned.")
 
+    evaluation_started = time.perf_counter()
     evaluation = evaluate_representation(
         values,
         labels,
@@ -1456,6 +1484,7 @@ def _add_representation_result(
         n_permutations=int(payload["signal_config"]["n_permutations"]),
         random_state=SEED,
     )
+    evaluation_seconds = time.perf_counter() - evaluation_started
     payload["representation_results"].append(
         {
             "representation_key": representation_key,
@@ -1468,6 +1497,14 @@ def _add_representation_result(
     )
     payload["_representation_matrices"][representation_key] = values.astype(
         np.float32, copy=True
+    )
+    _record_runtime(
+        payload,
+        stage="representation_evaluation",
+        seconds=evaluation_seconds,
+        representation=representation_method,
+        hypothesis=hypothesis,
+        representation_seed=representation_seed,
     )
 
 
@@ -1731,8 +1768,10 @@ def _add_rare_cluster_scorer(
     """Run the deterministic population scorer once for one representation."""
 
     method = f"{method_prefix}_rare_cluster"
+    scorer_started = time.perf_counter()
     try:
         scores, cluster_ids, diagnostics = rare_cluster_anomaly_scores(values)
+        scorer_seconds = time.perf_counter() - scorer_started
         method_key = _method_key(
             method,
             hypothesis,
@@ -1748,10 +1787,22 @@ def _add_rare_cluster_scorer(
                 "hypothesis": hypothesis,
                 "representation_seed": representation_seed,
                 "scorer_seed": None,
+                "runtime_seconds": scorer_seconds,
                 **diagnostics,
             }
         )
+        _record_runtime(
+            payload,
+            stage="scorer",
+            seconds=scorer_seconds,
+            status=str(diagnostics["status"]),
+            representation=representation_method,
+            scorer="hdbscan_rare_cluster",
+            hypothesis=hypothesis,
+            representation_seed=representation_seed,
+        )
         if diagnostics["status"] == "completed":
+            artifact_started = time.perf_counter()
             _add_method_artifacts(
                 payload,
                 method,
@@ -1766,6 +1817,15 @@ def _add_rare_cluster_scorer(
                 representation_seed=representation_seed,
                 scorer_seed=None,
                 coordinates=coordinates,
+            )
+            _record_runtime(
+                payload,
+                stage="method_artifacts_and_signal",
+                seconds=time.perf_counter() - artifact_started,
+                representation=representation_method,
+                scorer="hdbscan_rare_cluster",
+                hypothesis=hypothesis,
+                representation_seed=representation_seed,
             )
             for session_id, (cluster_id, cluster_score) in enumerate(
                 zip(cluster_ids, scores)
@@ -1795,6 +1855,16 @@ def _add_rare_cluster_scorer(
                 reason=str(diagnostics["reason"]),
             )
     except Exception as error:
+        _record_runtime(
+            payload,
+            stage="scorer",
+            seconds=time.perf_counter() - scorer_started,
+            status="failed",
+            representation=representation_method,
+            scorer="hdbscan_rare_cluster",
+            hypothesis=hypothesis,
+            representation_seed=representation_seed,
+        )
         _unavailable_scorer_result(
             payload,
             method=method,
@@ -1840,9 +1910,30 @@ def _add_scoring_suite(
         labels=labels,
         dimension_names=dimension_names,
     )
+    coordinate_started = time.perf_counter()
     coordinates = _embedding_2d(values)
+    _record_runtime(
+        payload,
+        stage="coordinate_projection",
+        seconds=time.perf_counter() - coordinate_started,
+        representation=representation_method,
+        hypothesis=hypothesis,
+        representation_seed=representation_seed,
+    )
 
+    scorer_started = time.perf_counter()
     knn_scores = knn_anomaly_scores(values, k=k)
+    scorer_seconds = time.perf_counter() - scorer_started
+    _record_runtime(
+        payload,
+        stage="scorer",
+        seconds=scorer_seconds,
+        representation=representation_method,
+        scorer="knn_mean_distance",
+        hypothesis=hypothesis,
+        representation_seed=representation_seed,
+    )
+    artifact_started = time.perf_counter()
     _add_method_artifacts(
         payload,
         f"{method_prefix}_knn",
@@ -1858,6 +1949,15 @@ def _add_scoring_suite(
         scorer_seed=None,
         coordinates=coordinates,
     )
+    _record_runtime(
+        payload,
+        stage="method_artifacts_and_signal",
+        seconds=time.perf_counter() - artifact_started,
+        representation=representation_method,
+        scorer="knn_mean_distance",
+        hypothesis=hypothesis,
+        representation_seed=representation_seed,
+    )
 
     active_scorer_seeds = (
         (int(representation_seed),)
@@ -1866,6 +1966,7 @@ def _add_scoring_suite(
     )
     for scorer_seed in active_scorer_seeds:
         isolation_method = f"{method_prefix}_isolation_forest"
+        scorer_started = time.perf_counter()
         try:
             isolation_scores, isolation_diagnostics = (
                 isolation_forest_anomaly_scores(
@@ -1873,6 +1974,7 @@ def _add_scoring_suite(
                     random_state=scorer_seed,
                 )
             )
+            scorer_seconds = time.perf_counter() - scorer_started
             isolation_key = _method_key(
                 isolation_method,
                 hypothesis,
@@ -1888,10 +1990,23 @@ def _add_scoring_suite(
                     "hypothesis": hypothesis,
                     "representation_seed": representation_seed,
                     "scorer_seed": scorer_seed,
+                    "runtime_seconds": scorer_seconds,
                     **isolation_diagnostics,
                 }
             )
+            _record_runtime(
+                payload,
+                stage="scorer",
+                seconds=scorer_seconds,
+                status=str(isolation_diagnostics["status"]),
+                representation=representation_method,
+                scorer="isolation_forest",
+                hypothesis=hypothesis,
+                representation_seed=representation_seed,
+                scorer_seed=scorer_seed,
+            )
             if isolation_diagnostics["status"] == "completed":
+                artifact_started = time.perf_counter()
                 _add_method_artifacts(
                     payload,
                     isolation_method,
@@ -1907,6 +2022,16 @@ def _add_scoring_suite(
                     scorer_seed=scorer_seed,
                     coordinates=coordinates,
                 )
+                _record_runtime(
+                    payload,
+                    stage="method_artifacts_and_signal",
+                    seconds=time.perf_counter() - artifact_started,
+                    representation=representation_method,
+                    scorer="isolation_forest",
+                    hypothesis=hypothesis,
+                    representation_seed=representation_seed,
+                    scorer_seed=scorer_seed,
+                )
             else:
                 _unavailable_scorer_result(
                     payload,
@@ -1921,6 +2046,17 @@ def _add_scoring_suite(
                     reason=str(isolation_diagnostics["reason"]),
                 )
         except Exception as error:
+            _record_runtime(
+                payload,
+                stage="scorer",
+                seconds=time.perf_counter() - scorer_started,
+                status="failed",
+                representation=representation_method,
+                scorer="isolation_forest",
+                hypothesis=hypothesis,
+                representation_seed=representation_seed,
+                scorer_seed=scorer_seed,
+            )
             _unavailable_scorer_result(
                 payload,
                 method=isolation_method,
@@ -2664,6 +2800,46 @@ def train_dominant_style(
         graph,
         x_dict,
     )
+    primary_count = int(x_dict[graph.primary_node_type].shape[0])
+    primary_incident = np.zeros(primary_count, dtype=np.int64)
+    relation_example_diagnostics = []
+    for edge_type, (positive_edges, negative_edges) in zip(
+        graph.forward_edge_types,
+        relation_examples,
+    ):
+        full_edges = edge_index_dict[edge_type]
+        if edge_type[0] == graph.primary_node_type and full_edges.shape[1]:
+            primary_incident += np.bincount(
+                full_edges[0].cpu().numpy(), minlength=primary_count
+            )
+        if edge_type[2] == graph.primary_node_type and full_edges.shape[1]:
+            primary_incident += np.bincount(
+                full_edges[1].cpu().numpy(), minlength=primary_count
+            )
+        relation_example_diagnostics.append(
+            {
+                "edge_type": list(edge_type),
+                "forward_edges": int(full_edges.shape[1]),
+                "evaluation_positive_examples": int(positive_edges.shape[1]),
+                "evaluation_negative_examples": int(negative_edges.shape[1]),
+            }
+        )
+    incident_total = int(primary_incident.sum())
+    primary_neighborhood_diagnostics = {
+        "primary_nodes": primary_count,
+        "non_isolated_fraction": (
+            float(np.mean(primary_incident > 0)) if primary_count else 0.0
+        ),
+        "degree_at_least_two_fraction": (
+            float(np.mean(primary_incident >= 2)) if primary_count else 0.0
+        ),
+        "maximum_incident_edge_fraction": (
+            float(primary_incident.max() / incident_total)
+            if incident_total and primary_count
+            else 0.0
+        ),
+        "incident_edge_endpoints": incident_total,
+    }
 
     encoder.eval()
     structure_decoder.eval()
@@ -2802,6 +2978,8 @@ def train_dominant_style(
         "structure_reconstruction": "sampled_typed_relation_bce",
         "attribute_reconstruction": "primary_node_l2",
         "secondary_attribute_policy": "constant_inputs_not_reconstructed",
+        "relation_example_diagnostics": relation_example_diagnostics,
+        "primary_neighborhood_diagnostics": primary_neighborhood_diagnostics,
     }
 
 
@@ -2888,6 +3066,7 @@ def run_autosignal(
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> dict[str, Any]:
     """Run the complete aligned representation/scorer battery."""
+    run_started = time.perf_counter()
     if isinstance(k, (bool, np.bool_)) or not isinstance(k, (int, np.integer)):
         raise ValueError("k must be an integer.")
     if int(k) < 1:
@@ -2922,7 +3101,9 @@ def run_autosignal(
             progress_callback(float(np.clip(progress, 0.0, 1.0)), message)
 
     report(0.0, "Validating configuration")
+    validation_started = time.perf_counter()
     cfg = validate_config(agent_config, df)
+    validation_seconds = time.perf_counter() - validation_started
     feature_names = [
         feature_set["name"] for feature_set in cfg["feature_sets"]
     ]
@@ -2951,8 +3132,10 @@ def run_autosignal(
     completed_stages = 1
 
     report(completed_stages / total_stages, "Creating sessions")
+    sessionization_started = time.perf_counter()
     sessionized_df, sessions, session_manifest = sessionize(df, cfg)
     labels = _session_labels(sessionized_df, sessions, cfg)
+    sessionization_seconds = time.perf_counter() - sessionization_started
     completed_stages += 1
     selected_types = cfg["_selected_types"]
     public_config = {
@@ -2988,6 +3171,7 @@ def run_autosignal(
         "scorer_diagnostics": [],
         "score_components": [],
         "dominant_diagnostics": [],
+        "runtime_diagnostics": [],
         "session_scores": [],
         "embeddings": [],
         "signal_config": {
@@ -3002,6 +3186,16 @@ def run_autosignal(
         "signal_results": [],
         "signal_scores": [],
     }
+    _record_runtime(
+        payload,
+        stage="configuration_validation",
+        seconds=validation_seconds,
+    )
+    _record_runtime(
+        payload,
+        stage="sessionization",
+        seconds=sessionization_seconds,
+    )
 
     report(completed_stages / total_stages, "Scoring random baseline")
     random_scores = np.random.default_rng(SEED).random(len(sessions))
@@ -3215,12 +3409,14 @@ def run_autosignal(
                     f"Training GraphSAGE: {name} · seed {seed}",
                 )
                 try:
+                    training_started = time.perf_counter()
                     random_primary, trained_primary, losses = train_graphsage(
                         graph,
                         row_matrix,
                         seed=seed,
                         epochs=graph_epochs,
                     )
+                    training_seconds = time.perf_counter() - training_started
                     for variant, primary_embeddings in (
                         ("graphsage_random", random_primary),
                         ("graphsage_trained", trained_primary),
@@ -3257,6 +3453,7 @@ def run_autosignal(
                             "hypothesis": name,
                             "seed": int(seed),
                             "losses": losses,
+                            "training_runtime_seconds": training_seconds,
                         }
                     )
                 except Exception as error:
@@ -3301,12 +3498,14 @@ def run_autosignal(
                     f"Training DOMINANT-style: {name} · seed {seed}",
                 )
                 try:
+                    training_started = time.perf_counter()
                     dominant_output = train_dominant_style(
                         graph,
                         row_matrix,
                         seed=seed,
                         epochs=graph_epochs,
                     )
+                    training_seconds = time.perf_counter() - training_started
                     for variant in ("untrained", "trained"):
                         representation_method = f"dominant_style_{variant}"
                         primary_embeddings = dominant_output[
@@ -3413,7 +3612,14 @@ def run_autosignal(
                             "secondary_attribute_policy": dominant_output[
                                 "secondary_attribute_policy"
                             ],
+                            "relation_example_diagnostics": dominant_output[
+                                "relation_example_diagnostics"
+                            ],
+                            "primary_neighborhood_diagnostics": dominant_output[
+                                "primary_neighborhood_diagnostics"
+                            ],
                             "session_score_pooling": "max_unique_primary_node",
+                            "training_runtime_seconds": training_seconds,
                         }
                     )
                 except Exception as error:
@@ -3447,6 +3653,9 @@ def run_autosignal(
             }
         )
     payload["sessions"] = session_rows
+    payload["run_manifest"]["total_runtime_seconds"] = float(
+        time.perf_counter() - run_started
+    )
     report(1.0, "AutoSignal complete")
     return payload
 
