@@ -1,0 +1,7 @@
+dataset_id,partition_id,partition_role,cluster_key,review_units,clusters,malicious_review_units,prevalence
+acme_process_telemetry,acme_development,development,hostname,808,11,13,0.01608910891089109
+acme_process_telemetry,acme_selection,selection,hostname,824,11,3,0.0036407766990291263
+unsw_nb15_raw,unsw_development,development,srcip,25000,35,1313,0.05252
+unsw_nb15_raw,unsw_selection,selection,srcip,25000,27,5696,0.22784
+cic_ids_2017_ml_csv,cic_development,development,source_file,25000,3,3288,0.13152
+cic_ids_2017_ml_csv,cic_selection,selection,source_file,25000,2,151,0.00604

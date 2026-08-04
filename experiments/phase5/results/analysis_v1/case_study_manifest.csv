@@ -1,0 +1,5 @@
+category,dataset_id,partition_id,config_or_comparison,selection_rule
+useful_representation_and_ranking,unsw_nb15_raw,unsw_selection,intrinsic|observed|dominant_style_trained|dominant_joint_reconstruction|Historical Connection Frequency Context,"highest-AP Recommend, otherwise highest-AP Explore"
+useful_representation_failed_scorer,unsw_nb15_raw,unsw_selection,matched|observed|dominant_style_trained|dominant_joint_reconstruction|TCP Handshake and Packet Timing,highest linear-probe AP representation with a non-Recommend scorer
+structure_operationally_harmful_or_unsupported,cic_ids_2017_ml_csv,cic_selection,intrinsic|observed|graphsage_trained|isolation_forest|Network Flow Volume and Throughput,most negative observed-minus-permuted AP difference
+trained_graphsage_approximately_random,unsw_nb15_raw,unsw_selection,intrinsic|observed|graphsage_trained|knn_mean_distance|Payload Size and Transmission Throughput,smallest absolute trained-minus-random GraphSAGE AP difference

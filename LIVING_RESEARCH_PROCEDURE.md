@@ -3,13 +3,13 @@
 **Document role:** Current source of truth for what happens next, what is frozen,
 what remains exploratory, and why each experiment exists.
 
-**Last updated:** 2026-08-03
+**Last updated:** 2026-08-04
 
-**Current phase:** Phase 4 — execute the frozen experiments
+**Current phase:** Phase 7 - prepare evidence-backed final figures and report
 
-**Immediate objective:** Execute and cache the six frozen
-development/selection partitions with the validated runner, without
-materializing any sealed confirmation sample or label.
+**Immediate objective:** Present the completed Phase 4/5 evidence without
+opening any sealed confirmation partition. No configuration reached Recommend,
+so Phase 6 is not activated under the frozen rule.
 
 > This is a living document. Update the status tables and current decisions in
 > place. Preserve the decision log at the end. Do not append competing roadmaps.
@@ -494,11 +494,11 @@ The correct hypotheses are therefore:
 | P2.1 | Run small correctness/feasibility pilot | Completed | [`experiments/phase2/results/pilot_v1/REPORT.md`](experiments/phase2/results/pilot_v1/REPORT.md); spec SHA-256 `5133edd044b3…` |
 | P2.2 | Decide CoLA through the declared gate | Completed — deferred | Gate was not activated; no label-blind context sampler is frozen or tested |
 | P3.1 | Write immutable final matrix specification | Completed | [`experiments/phase3/matrix_v1.json`](experiments/phase3/matrix_v1.json), SHA-256 `c56ca6f3cc5d…` |
-| P4.1 | Execute and cache frozen matrix | Runner ready; execution pending | [`experiments/phase4/run_matrix.py`](experiments/phase4/run_matrix.py) + tidy result/failure tables |
-| P5.1 | Run paired statistical analysis | Pending | Comparison/uncertainty tables |
-| P5.2 | Assign Recommend/Explore/Abstain outcomes | Pending | Outcome table |
-| P5.3 | Select evidence-backed case studies | Pending | Case-study manifest |
-| P6.1 | Run untouched confirmation once | Pending | Locked confirmation artifact |
+| P4.1 | Execute and cache frozen matrix | Completed | 12/12 cases, 0 failures, 912 method rows, 390 representation rows |
+| P5.1 | Run paired statistical analysis | Completed | [`experiments/phase5/results/analysis_v1/comparisons.csv`](experiments/phase5/results/analysis_v1/comparisons.csv) |
+| P5.2 | Assign Recommend/Explore/Abstain outcomes | Completed | 0 Recommend, 104 Explore, 54 Abstain; [`outcomes.csv`](experiments/phase5/results/analysis_v1/outcomes.csv) |
+| P5.3 | Select evidence-backed case studies | Completed | [`case_study_manifest.csv`](experiments/phase5/results/analysis_v1/case_study_manifest.csv) |
+| P6.1 | Run untouched confirmation once | Not activated | No Recommend configuration; confirmation labels remain sealed |
 | P7.1 | Generate final figures | Pending | Validated figure directory |
 | P7.2 | Assemble and verify presentation | Pending | Final deck/export |
 
@@ -705,3 +705,27 @@ artifact_paths
 - A 500-flow CIC smoke execution completed the observed and graph-null paths,
   produced 58 method rows and 25 representation rows, and wrote the compact
   digest with zero failures.
+
+### 2026-08-04 - Phase 4 matrix and Phase 5 analysis completed
+
+- Executed all 12 frozen development/selection cases across ACME, UNSW-NB15,
+  and CIC-IDS-2017. All cases completed with zero failures and produced the
+  exact declared totals: 912 method rows and 390 representation rows.
+- Ran 2,000-replicate paired cluster-bootstrap comparisons using hostname,
+  source IP, or source file according to the frozen dataset policy, followed
+  by Holm correction within dataset.
+- Assigned 158 selection configurations: 0 Recommend, 104 Explore, and 54
+  Abstain. No confirmation candidate was selected, so every Phase 6 partition
+  remains sealed.
+- Direction-only method-family results were informative but insufficient for
+  confirmation: raw Isolation Forest exceeded raw kNN on two datasets;
+  DOMINANT training exceeded its untrained control on three; GraphSAGE training
+  exceeded random GraphSAGE on zero; and matched amplification improved on zero.
+- Recorded a preregistration resolution limitation: with 2,000 bootstrap draws,
+  a conservative two-sided finite-sample p-value, and 146-158 evaluable Holm
+  comparisons per dataset, the adjusted p <= 0.05 gate is mathematically
+  unattainable. This prevents Recommend under the frozen operationalization and
+  must not be misreported as evidence that all methods are equivalent.
+- The intrinsic outcome table is intentionally smaller than the complete
+  outcome table because matched transforms are supporting configurations. The
+  complete machine-readable result remains in Phase 5 `outcomes.csv`.

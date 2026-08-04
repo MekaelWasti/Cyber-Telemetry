@@ -1,0 +1,28 @@
+{
+  "analysis_id": "analysis_v1",
+  "matrix_sha256": "c56ca6f3cc5d794fc6da3b09dd273b5a07c461ceba1165017608bb559f190b68",
+  "phase4_execution": {
+    "completed_cases": 12,
+    "failed_cases": 0,
+    "method_rows": 912,
+    "representation_rows": 390,
+    "digest_rows": 327
+  },
+  "bootstrap_replicates": 2000,
+  "comparison_rows": 471,
+  "completed_comparisons": 457,
+  "outcome_rows": 158,
+  "outcomes": {
+    "Explore": 104,
+    "Abstain": 54
+  },
+  "confirmation_candidates": 0,
+  "sealed_confirmation_accessed": false,
+  "holm_family_sizes": {
+    "acme_process_telemetry": 146,
+    "cic_ids_2017_ml_csv": 158,
+    "unsw_nb15_raw": 153
+  },
+  "minimum_raw_p_two_sided_finite_sample": 0.0009995002498750624,
+  "inference_resolution_warning": "The minimum attainable Holm-adjusted p-value exceeds 0.05 in every dataset under the frozen 2,000-replicate, all-primary-comparisons family."
+}
