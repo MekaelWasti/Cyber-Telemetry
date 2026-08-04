@@ -72,6 +72,21 @@ SIGNAL_MIN_TAIL_SIZE = 10
 SIGNAL_ALPHA = 0.05
 SIGNAL_AMPLIFICATION_ALPHA = 0.5
 DOMINANT_ATTRIBUTE_ALPHA = 0.5
+SUPPORTED_REPRESENTATIONS = frozenset(
+    {
+        "random_score",
+        "raw_session",
+        "typed_structural_stats",
+        "node2vec",
+        "graphsage_random",
+        "graphsage_trained",
+        "dominant_style_untrained",
+        "dominant_style_trained",
+    }
+)
+SUPPORTED_COMMON_SCORERS = frozenset(
+    {"knn_mean_distance", "isolation_forest", "hdbscan_rare_cluster"}
+)
 
 
 def _software_environment() -> dict[str, Any]:
@@ -1668,6 +1683,7 @@ def _add_failed_scoring_suite(
     scorer_seeds: tuple[int, ...],
     error: Exception,
     representation_seed: int | None = None,
+    scorer_allowlist: frozenset[str] | None = None,
 ) -> None:
     """Declare every planned scorer when its representation cannot be built."""
 
@@ -1685,48 +1701,52 @@ def _add_failed_scoring_suite(
         representation_seed=representation_seed,
         reason=reason,
     )
-    _unavailable_scorer_result(
-        payload,
-        method=f"{method_prefix}_knn",
-        hypothesis=hypothesis,
-        representation_key=representation_key,
-        representation_method=representation_method,
-        scorer="knn_mean_distance",
-        representation_seed=representation_seed,
-        scorer_seed=None,
-        status="failed",
-        reason=reason,
-    )
+    active_scorers = scorer_allowlist or SUPPORTED_COMMON_SCORERS
+    if "knn_mean_distance" in active_scorers:
+        _unavailable_scorer_result(
+            payload,
+            method=f"{method_prefix}_knn",
+            hypothesis=hypothesis,
+            representation_key=representation_key,
+            representation_method=representation_method,
+            scorer="knn_mean_distance",
+            representation_seed=representation_seed,
+            scorer_seed=None,
+            status="failed",
+            reason=reason,
+        )
     active_scorer_seeds = (
         (int(representation_seed),)
         if representation_seed is not None
         else tuple(int(seed) for seed in scorer_seeds)
     )
-    for scorer_seed in active_scorer_seeds:
+    if "isolation_forest" in active_scorers:
+        for scorer_seed in active_scorer_seeds:
+            _unavailable_scorer_result(
+                payload,
+                method=f"{method_prefix}_isolation_forest",
+                hypothesis=hypothesis,
+                representation_key=representation_key,
+                representation_method=representation_method,
+                scorer="isolation_forest",
+                representation_seed=representation_seed,
+                scorer_seed=scorer_seed,
+                status="failed",
+                reason=reason,
+            )
+    if "hdbscan_rare_cluster" in active_scorers:
         _unavailable_scorer_result(
             payload,
-            method=f"{method_prefix}_isolation_forest",
+            method=f"{method_prefix}_rare_cluster",
             hypothesis=hypothesis,
             representation_key=representation_key,
             representation_method=representation_method,
-            scorer="isolation_forest",
+            scorer="hdbscan_rare_cluster",
             representation_seed=representation_seed,
-            scorer_seed=scorer_seed,
+            scorer_seed=None,
             status="failed",
             reason=reason,
         )
-    _unavailable_scorer_result(
-        payload,
-        method=f"{method_prefix}_rare_cluster",
-        hypothesis=hypothesis,
-        representation_key=representation_key,
-        representation_method=representation_method,
-        scorer="hdbscan_rare_cluster",
-        representation_seed=representation_seed,
-        scorer_seed=None,
-        status="failed",
-        reason=reason,
-    )
 
 
 def _add_failed_direct_method(
@@ -1907,6 +1927,7 @@ def _add_scoring_suite(
     scorer_seeds: tuple[int, ...],
     representation_seed: int | None = None,
     dimension_names: list[str] | None = None,
+    scorer_allowlist: frozenset[str] | None = None,
 ) -> None:
     """Register one X once, then apply the bounded common scorer battery."""
 
@@ -1939,50 +1960,54 @@ def _add_scoring_suite(
             representation_seed=representation_seed,
         )
 
-    scorer_started = time.perf_counter()
-    knn_scores = knn_anomaly_scores(values, k=k)
-    scorer_seconds = time.perf_counter() - scorer_started
-    _record_runtime(
-        payload,
-        stage="scorer",
-        seconds=scorer_seconds,
-        representation=representation_method,
-        scorer="knn_mean_distance",
-        hypothesis=hypothesis,
-        representation_seed=representation_seed,
-    )
-    artifact_started = time.perf_counter()
-    _add_method_artifacts(
-        payload,
-        f"{method_prefix}_knn",
-        hypothesis,
-        knn_scores,
-        values,
-        labels,
-        seed=representation_seed,
-        representation_key=representation_key,
-        representation_method=representation_method,
-        scorer="knn_mean_distance",
-        representation_seed=representation_seed,
-        scorer_seed=None,
-        coordinates=coordinates,
-    )
-    _record_runtime(
-        payload,
-        stage="method_artifacts_and_signal",
-        seconds=time.perf_counter() - artifact_started,
-        representation=representation_method,
-        scorer="knn_mean_distance",
-        hypothesis=hypothesis,
-        representation_seed=representation_seed,
-    )
+    active_scorers = scorer_allowlist or SUPPORTED_COMMON_SCORERS
+    if "knn_mean_distance" in active_scorers:
+        scorer_started = time.perf_counter()
+        knn_scores = knn_anomaly_scores(values, k=k)
+        scorer_seconds = time.perf_counter() - scorer_started
+        _record_runtime(
+            payload,
+            stage="scorer",
+            seconds=scorer_seconds,
+            representation=representation_method,
+            scorer="knn_mean_distance",
+            hypothesis=hypothesis,
+            representation_seed=representation_seed,
+        )
+        artifact_started = time.perf_counter()
+        _add_method_artifacts(
+            payload,
+            f"{method_prefix}_knn",
+            hypothesis,
+            knn_scores,
+            values,
+            labels,
+            seed=representation_seed,
+            representation_key=representation_key,
+            representation_method=representation_method,
+            scorer="knn_mean_distance",
+            representation_seed=representation_seed,
+            scorer_seed=None,
+            coordinates=coordinates,
+        )
+        _record_runtime(
+            payload,
+            stage="method_artifacts_and_signal",
+            seconds=time.perf_counter() - artifact_started,
+            representation=representation_method,
+            scorer="knn_mean_distance",
+            hypothesis=hypothesis,
+            representation_seed=representation_seed,
+        )
 
     active_scorer_seeds = (
         (int(representation_seed),)
         if representation_seed is not None
         else tuple(int(seed) for seed in scorer_seeds)
     )
-    for scorer_seed in active_scorer_seeds:
+    for scorer_seed in (
+        active_scorer_seeds if "isolation_forest" in active_scorers else ()
+    ):
         isolation_method = f"{method_prefix}_isolation_forest"
         scorer_started = time.perf_counter()
         try:
@@ -2088,17 +2113,18 @@ def _add_scoring_suite(
                 reason=f"{type(error).__name__}: {error}",
             )
 
-    _add_rare_cluster_scorer(
-        payload,
-        representation_key=representation_key,
-        representation_method=representation_method,
-        method_prefix=method_prefix,
-        hypothesis=hypothesis,
-        representation_seed=representation_seed,
-        values=values,
-        coordinates=coordinates,
-        labels=labels,
-    )
+    if "hdbscan_rare_cluster" in active_scorers:
+        _add_rare_cluster_scorer(
+            payload,
+            representation_key=representation_key,
+            representation_method=representation_method,
+            method_prefix=method_prefix,
+            hypothesis=hypothesis,
+            representation_seed=representation_seed,
+            values=values,
+            coordinates=coordinates,
+            labels=labels,
+        )
 
 
 def _safe_identifier(value: Any) -> str | None:
@@ -2116,8 +2142,6 @@ def _primary_endpoint(
         for side in ("source", "target"):
             node_type = relation[f"{side}_node_type"]
             column = relation[f"{side}_column"]
-            if column == "$row_id":
-                continue
             candidates[(node_type, column)] = candidates.get((node_type, column), 0) + 1
 
     if not candidates:
@@ -2125,8 +2149,12 @@ def _primary_endpoint(
 
     scored = []
     for (node_type, column), uses in candidates.items():
-        non_null = int(df[column].notna().sum())
-        unique = int(df[column].nunique(dropna=True))
+        if column == "$row_id":
+            non_null = len(df)
+            unique = len(df)
+        else:
+            non_null = int(df[column].notna().sum())
+            unique = int(df[column].nunique(dropna=True))
         coverage = non_null / max(len(df), 1)
         uniqueness = unique / max(non_null, 1)
         scored.append(
@@ -2181,7 +2209,12 @@ def build_typed_graph(
     primary_map = node_maps[primary_node_type]
     row_primary_index = []
     for position, row in sessionized_df.iterrows():
-        identifier = _safe_identifier(row[primary_id_column])
+        primary_value = (
+            f"row:{row['_source_row']}"
+            if primary_id_column == "$row_id"
+            else row[primary_id_column]
+        )
+        identifier = _safe_identifier(primary_value)
         if identifier is None:
             identifier = f"__missing_primary__:{row['_source_row']}"
             primary_map[identifier] = len(primary_map)
@@ -2530,6 +2563,8 @@ def train_graphsage(
     epochs: int = DEFAULT_GRAPH_EPOCHS,
     hidden_dim: int = DEFAULT_EMBEDDING_DIM,
     output_dim: int = DEFAULT_EMBEDDING_DIM,
+    patience: int | None = None,
+    min_delta: float = 1e-4,
 ) -> tuple[np.ndarray, np.ndarray, list[float]]:
     np.random.seed(seed)
     random.seed(seed)
@@ -2557,6 +2592,10 @@ def train_graphsage(
         lr=0.002,
     )
     losses: list[float] = []
+    best_loss = math.inf
+    best_encoder_state = copy.deepcopy(encoder.state_dict())
+    best_decoder_state = copy.deepcopy(decoder.state_dict())
+    stale_epochs = 0
 
     for _ in range(epochs):
         encoder.train()
@@ -2622,7 +2661,20 @@ def train_graphsage(
             list(encoder.parameters()) + list(decoder.parameters()), 1.0
         )
         optimizer.step()
-        losses.append(float(loss.detach()))
+        loss_value = float(loss.detach())
+        losses.append(loss_value)
+        if loss_value < best_loss - float(min_delta):
+            best_loss = loss_value
+            best_encoder_state = copy.deepcopy(encoder.state_dict())
+            best_decoder_state = copy.deepcopy(decoder.state_dict())
+            stale_epochs = 0
+        else:
+            stale_epochs += 1
+            if patience is not None and stale_epochs >= int(patience):
+                break
+
+    encoder.load_state_dict(best_encoder_state)
+    decoder.load_state_dict(best_decoder_state)
 
     encoder.eval()
     with torch.no_grad():
@@ -2778,6 +2830,8 @@ def train_dominant_style(
     hidden_dim: int = DEFAULT_EMBEDDING_DIM,
     output_dim: int = DEFAULT_EMBEDDING_DIM,
     attribute_alpha: float = DOMINANT_ATTRIBUTE_ALPHA,
+    patience: int | None = None,
+    min_delta: float = 1e-4,
 ) -> dict[str, Any]:
     """Train a sparse heterogeneous DOMINANT-style reconstruction model.
 
@@ -2888,6 +2942,11 @@ def train_dominant_style(
         lr=0.002,
     )
     losses: list[dict[str, float]] = []
+    best_loss = math.inf
+    best_encoder_state = copy.deepcopy(encoder.state_dict())
+    best_structure_state = copy.deepcopy(structure_decoder.state_dict())
+    best_attribute_state = copy.deepcopy(attribute_decoder.state_dict())
+    stale_epochs = 0
     for _ in range(int(epochs)):
         encoder.train()
         structure_decoder.train()
@@ -2958,6 +3017,21 @@ def train_dominant_style(
                 "structure": float(structure_loss.detach()),
             }
         )
+        loss_value = float(loss.detach())
+        if loss_value < best_loss - float(min_delta):
+            best_loss = loss_value
+            best_encoder_state = copy.deepcopy(encoder.state_dict())
+            best_structure_state = copy.deepcopy(structure_decoder.state_dict())
+            best_attribute_state = copy.deepcopy(attribute_decoder.state_dict())
+            stale_epochs = 0
+        else:
+            stale_epochs += 1
+            if patience is not None and stale_epochs >= int(patience):
+                break
+
+    encoder.load_state_dict(best_encoder_state)
+    structure_decoder.load_state_dict(best_structure_state)
+    attribute_decoder.load_state_dict(best_attribute_state)
 
     encoder.eval()
     structure_decoder.eval()
@@ -3080,10 +3154,14 @@ def run_autosignal(
     k: int = DEFAULT_K,
     seeds: tuple[int, ...] = (SEED,),
     graph_epochs: int = DEFAULT_GRAPH_EPOCHS,
+    graph_patience: int | None = None,
     signal_permutations: int = DEFAULT_SIGNAL_PERMUTATIONS,
     include_coordinates: bool = True,
     include_signal: bool = True,
     signal_representation_allowlist: tuple[str, ...] | None = None,
+    representation_allowlist: tuple[str, ...] | None = None,
+    scorer_allowlist: tuple[str, ...] | None = None,
+    feature_hypothesis_allowlist: tuple[str, ...] | None = None,
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> dict[str, Any]:
     """Run the complete aligned representation/scorer battery."""
@@ -3107,6 +3185,14 @@ def run_autosignal(
     ):
         raise ValueError("graph_epochs must be a positive integer.")
     graph_epochs = int(graph_epochs)
+    if graph_patience is not None:
+        if (
+            isinstance(graph_patience, (bool, np.bool_))
+            or not isinstance(graph_patience, (int, np.integer))
+            or int(graph_patience) < 1
+        ):
+            raise ValueError("graph_patience must be a positive integer or None.")
+        graph_patience = int(graph_patience)
     if (
         isinstance(signal_permutations, (bool, np.bool_))
         or not isinstance(signal_permutations, (int, np.integer))
@@ -3116,6 +3202,27 @@ def run_autosignal(
             "signal_permutations must be an integer of at least 99."
         )
     signal_permutations = int(signal_permutations)
+    active_representations = (
+        SUPPORTED_REPRESENTATIONS
+        if representation_allowlist is None
+        else frozenset(str(value) for value in representation_allowlist)
+    )
+    unknown_representations = active_representations - SUPPORTED_REPRESENTATIONS
+    if unknown_representations:
+        raise ValueError(
+            "Unknown representation_allowlist values: "
+            f"{sorted(unknown_representations)}"
+        )
+    active_scorers = (
+        SUPPORTED_COMMON_SCORERS
+        if scorer_allowlist is None
+        else frozenset(str(value) for value in scorer_allowlist)
+    )
+    unknown_scorers = active_scorers - SUPPORTED_COMMON_SCORERS
+    if unknown_scorers:
+        raise ValueError(
+            f"Unknown scorer_allowlist values: {sorted(unknown_scorers)}"
+        )
 
     def report(progress: float, message: str) -> None:
         if progress_callback is not None:
@@ -3125,27 +3232,71 @@ def run_autosignal(
     validation_started = time.perf_counter()
     cfg = validate_config(agent_config, df)
     validation_seconds = time.perf_counter() - validation_started
-    feature_names = [
-        feature_set["name"] for feature_set in cfg["feature_sets"]
+    requested_hypotheses = (
+        None
+        if feature_hypothesis_allowlist is None
+        else set(str(value) for value in feature_hypothesis_allowlist)
+    )
+    active_feature_sets = [
+        feature_set
+        for feature_set in cfg["feature_sets"]
+        if requested_hypotheses is None
+        or feature_set["name"] in requested_hypotheses
     ]
+    if requested_hypotheses is not None:
+        unknown_hypotheses = requested_hypotheses - {
+            feature_set["name"] for feature_set in cfg["feature_sets"]
+        }
+        if unknown_hypotheses:
+            raise ValueError(
+                "Unknown feature_hypothesis_allowlist values: "
+                f"{sorted(unknown_hypotheses)}"
+            )
+    feature_names = [feature_set["name"] for feature_set in active_feature_sets]
     seed_count = len(seeds)
+    graph_representations = active_representations - {
+        "random_score",
+        "raw_session",
+    }
     progress_stages = [
         "configuration_validation",
         "sessionization",
-        "random_baseline",
-        *[f"raw_session_scorers::{name}" for name in feature_names],
-        "graph_construction",
-        "typed_structural_stats_scorers",
-        *[f"node2vec_scorers::seed={seed}" for seed in seeds],
+        *(["random_baseline"] if "random_score" in active_representations else []),
+        *(
+            [f"raw_session_scorers::{name}" for name in feature_names]
+            if "raw_session" in active_representations
+            else []
+        ),
+        *(["graph_construction"] if graph_representations else []),
+        *(
+            ["typed_structural_stats_scorers"]
+            if "typed_structural_stats" in active_representations
+            else []
+        ),
+        *(
+            [f"node2vec_scorers::seed={seed}" for seed in seeds]
+            if "node2vec" in active_representations
+            else []
+        ),
         *[
             f"graphsage::{name}::seed={seed}"
             for name in feature_names
             for seed in seeds
+            if {
+                "graphsage_random",
+                "graphsage_trained",
+            }
+            & active_representations
         ],
         *[
             f"dominant_style::{name}::seed={seed}"
             for name in feature_names
             for seed in seeds
+            if {
+                "dominant_style_untrained",
+                "dominant_style_trained",
+            }
+            & active_representations
         ],
         "payload_finalization",
     ]
@@ -3178,16 +3329,26 @@ def run_autosignal(
                 if signal_representation_allowlist is not None
                 else None
             ),
+            "representation_allowlist": sorted(active_representations),
+            "scorer_allowlist": sorted(active_scorers),
+            "feature_hypothesis_allowlist": feature_names,
             "k": int(k),
             "seeds": [int(seed) for seed in seeds],
             "graph_epochs": int(graph_epochs),
+            "graph_patience": graph_patience,
             "software_environment": _software_environment(),
-            "scorers": [
-                "knn_mean_distance",
-                "isolation_forest",
-                "hdbscan_rare_cluster",
-                "dominant_joint_reconstruction",
-            ],
+            "scorers": sorted(
+                active_scorers
+                | (
+                    {"dominant_joint_reconstruction"}
+                    if {
+                        "dominant_style_untrained",
+                        "dominant_style_trained",
+                    }
+                    & active_representations
+                    else set()
+                )
+            ),
         },
         "session_manifest": session_manifest,
         "graph_manifest": None,
@@ -3225,155 +3386,173 @@ def run_autosignal(
         seconds=sessionization_seconds,
     )
 
-    report(completed_stages / total_stages, "Scoring random baseline")
-    random_scores = np.random.default_rng(SEED).random(len(sessions))
-    random_representation = random_scores[:, None]
-    _add_method_artifacts(
-        payload,
-        "random_baseline",
-        None,
-        random_scores,
-        random_representation,
-        labels,
-        seed=SEED,
-        representation_key="random_score",
-        representation_method="random_score",
-        scorer="random",
-        representation_seed=None,
-        scorer_seed=SEED,
-        signal_eligible=False,
-    )
-    completed_stages += 1
-
-    for feature_set in cfg["feature_sets"]:
-        name = feature_set["name"]
-        columns = list(feature_set["columns"])
-        report(completed_stages / total_stages, f"Raw session scorers: {name}")
-        try:
-            row_matrix, row_feature_names, diagnostics = build_row_feature_matrix(
-                sessionized_df, columns, selected_types
-            )
-            session_matrix, _ = _pool_rows(
-                row_matrix, sessionized_df, sessions
-            )
-            payload["feature_diagnostics"][name] = {
-                "source_columns": columns,
-                "numeric_features": row_feature_names,
-                "preprocessing": diagnostics,
-            }
-            _add_scoring_suite(
-                payload,
-                representation_method="raw_session",
-                method_prefix="raw_session",
-                hypothesis=name,
-                representation=session_matrix,
-                labels=labels,
-                k=k,
-                scorer_seeds=seeds,
-                dimension_names=_pooled_dimension_names(row_feature_names),
-            )
-        except Exception as error:
-            _add_failed_scoring_suite(
-                payload,
-                representation_method="raw_session",
-                method_prefix="raw_session",
-                hypothesis=name,
-                scorer_seeds=seeds,
-                error=error,
-            )
+    if "random_score" in active_representations:
+        report(completed_stages / total_stages, "Scoring random baseline")
+        random_scores = np.random.default_rng(SEED).random(len(sessions))
+        random_representation = random_scores[:, None]
+        _add_method_artifacts(
+            payload,
+            "random_baseline",
+            None,
+            random_scores,
+            random_representation,
+            labels,
+            seed=SEED,
+            representation_key="random_score",
+            representation_method="random_score",
+            scorer="random",
+            representation_seed=None,
+            scorer_seed=SEED,
+            signal_eligible=False,
+        )
         completed_stages += 1
 
+    if "raw_session" in active_representations:
+        for feature_set in active_feature_sets:
+            name = feature_set["name"]
+            columns = list(feature_set["columns"])
+            report(completed_stages / total_stages, f"Raw session scorers: {name}")
+            try:
+                row_matrix, row_feature_names, diagnostics = build_row_feature_matrix(
+                    sessionized_df, columns, selected_types
+                )
+                session_matrix, _ = _pool_rows(
+                    row_matrix, sessionized_df, sessions
+                )
+                payload["feature_diagnostics"][name] = {
+                    "source_columns": columns,
+                    "numeric_features": row_feature_names,
+                    "preprocessing": diagnostics,
+                }
+                _add_scoring_suite(
+                    payload,
+                    representation_method="raw_session",
+                    method_prefix="raw_session",
+                    hypothesis=name,
+                    representation=session_matrix,
+                    labels=labels,
+                    k=k,
+                    scorer_seeds=seeds,
+                    dimension_names=_pooled_dimension_names(row_feature_names),
+                    scorer_allowlist=active_scorers,
+                )
+            except Exception as error:
+                _add_failed_scoring_suite(
+                    payload,
+                    representation_method="raw_session",
+                    method_prefix="raw_session",
+                    hypothesis=name,
+                    scorer_seeds=seeds,
+                    error=error,
+                    scorer_allowlist=active_scorers,
+                )
+            completed_stages += 1
+
     graph: GraphBundle | None = None
-    report(completed_stages / total_stages, "Building typed telemetry graph")
-    try:
-        graph = build_typed_graph(sessionized_df, cfg)
-        payload["graph_manifest"] = graph.manifest
-    except Exception as error:
-        payload["graph_manifest"] = {
-            "status": "failed",
-            "error": f"{type(error).__name__}: {error}",
-        }
-        _add_failed_scoring_suite(
-            payload,
-            representation_method="typed_structural_stats",
-            method_prefix="typed_structural_stats",
-            hypothesis=None,
-            scorer_seeds=seeds,
-            error=error,
-        )
-        for seed in seeds:
+    if graph_representations:
+        report(completed_stages / total_stages, "Building typed telemetry graph")
+        try:
+            graph = build_typed_graph(sessionized_df, cfg)
+            payload["graph_manifest"] = graph.manifest
+        except Exception as error:
+            payload["graph_manifest"] = {
+                "status": "failed",
+                "error": f"{type(error).__name__}: {error}",
+            }
+        completed_stages += 1
+
+    if graph_representations and graph is None:
+        error = RuntimeError(payload["graph_manifest"]["error"])
+        if "typed_structural_stats" in active_representations:
             _add_failed_scoring_suite(
                 payload,
-                representation_method="node2vec",
-                method_prefix="node2vec",
+                representation_method="typed_structural_stats",
+                method_prefix="typed_structural_stats",
                 hypothesis=None,
                 scorer_seeds=seeds,
-                representation_seed=seed,
                 error=error,
+                scorer_allowlist=active_scorers,
             )
-        for feature_set in cfg["feature_sets"]:
+        if "node2vec" in active_representations:
+            for seed in seeds:
+                _add_failed_scoring_suite(
+                    payload,
+                    representation_method="node2vec",
+                    method_prefix="node2vec",
+                    hypothesis=None,
+                    scorer_seeds=seeds,
+                    representation_seed=seed,
+                    error=error,
+                    scorer_allowlist=active_scorers,
+                )
+        for feature_set in active_feature_sets:
             name = feature_set["name"]
             for seed in seeds:
                 for variant in ("graphsage_random", "graphsage_trained"):
-                    _add_failed_scoring_suite(
-                        payload,
-                        representation_method=variant,
-                        method_prefix=variant,
-                        hypothesis=name,
-                        scorer_seeds=seeds,
-                        representation_seed=seed,
-                        error=error,
-                    )
+                    if variant in active_representations:
+                        _add_failed_scoring_suite(
+                            payload,
+                            representation_method=variant,
+                            method_prefix=variant,
+                            hypothesis=name,
+                            scorer_seeds=seeds,
+                            representation_seed=seed,
+                            error=error,
+                            scorer_allowlist=active_scorers,
+                        )
                 for variant in ("untrained", "trained"):
                     representation_method = f"dominant_style_{variant}"
-                    _add_failed_direct_method(
-                        payload,
-                        representation_method=representation_method,
-                        method=f"{representation_method}_reconstruction",
-                        hypothesis=name,
-                        representation_seed=seed,
-                        scorer="dominant_joint_reconstruction",
-                        error=error,
-                    )
+                    if representation_method in active_representations:
+                        _add_failed_direct_method(
+                            payload,
+                            representation_method=representation_method,
+                            method=f"{representation_method}_reconstruction",
+                            hypothesis=name,
+                            representation_seed=seed,
+                            scorer="dominant_joint_reconstruction",
+                            error=error,
+                        )
         # Every skipped graph stage now has a declared failure artifact.
         completed_stages = total_stages - 1
-    completed_stages += 1
 
     if graph is not None:
-        report(
-            completed_stages / total_stages,
-            "Scoring typed structural statistics",
-        )
-        try:
-            structural_matrix, structural_features = (
-                structural_session_representation(
-                    graph, sessionized_df, sessions
+        if "typed_structural_stats" in active_representations:
+            report(
+                completed_stages / total_stages,
+                "Scoring typed structural statistics",
+            )
+            try:
+                structural_matrix, structural_features = (
+                    structural_session_representation(
+                        graph, sessionized_df, sessions
+                    )
                 )
-            )
-            payload["structural_features"] = structural_features
-            _add_scoring_suite(
-                payload,
-                representation_method="typed_structural_stats",
-                method_prefix="typed_structural_stats",
-                hypothesis=None,
-                representation=structural_matrix,
-                labels=labels,
-                k=k,
-                scorer_seeds=seeds,
-                dimension_names=_pooled_dimension_names(structural_features),
-            )
-        except Exception as error:
-            _add_failed_scoring_suite(
-                payload,
-                representation_method="typed_structural_stats",
-                method_prefix="typed_structural_stats",
-                hypothesis=None,
-                scorer_seeds=seeds,
-                error=error,
-            )
-        completed_stages += 1
+                payload["structural_features"] = structural_features
+                _add_scoring_suite(
+                    payload,
+                    representation_method="typed_structural_stats",
+                    method_prefix="typed_structural_stats",
+                    hypothesis=None,
+                    representation=structural_matrix,
+                    labels=labels,
+                    k=k,
+                    scorer_seeds=seeds,
+                    dimension_names=_pooled_dimension_names(structural_features),
+                    scorer_allowlist=active_scorers,
+                )
+            except Exception as error:
+                _add_failed_scoring_suite(
+                    payload,
+                    representation_method="typed_structural_stats",
+                    method_prefix="typed_structural_stats",
+                    hypothesis=None,
+                    scorer_seeds=seeds,
+                    error=error,
+                    scorer_allowlist=active_scorers,
+                )
+            completed_stages += 1
 
-        for seed in seeds:
+        for seed in (seeds if "node2vec" in active_representations else ()):
             report(
                 completed_stages / total_stages,
                 f"Training Node2Vec · seed {seed}",
@@ -3396,6 +3575,7 @@ def run_autosignal(
                     dimension_names=_pooled_dimension_names(
                         [f"latent_{index}" for index in range(latent_dimension)]
                     ),
+                    scorer_allowlist=active_scorers,
                 )
             except Exception as error:
                 _add_failed_scoring_suite(
@@ -3406,10 +3586,16 @@ def run_autosignal(
                     scorer_seeds=seeds,
                     representation_seed=seed,
                     error=error,
+                    scorer_allowlist=active_scorers,
                 )
             completed_stages += 1
 
-        for feature_set in cfg["feature_sets"]:
+        for feature_set in (
+            active_feature_sets
+            if {"graphsage_random", "graphsage_trained"}
+            & active_representations
+            else []
+        ):
             name = feature_set["name"]
             columns = list(feature_set["columns"])
             try:
@@ -3419,15 +3605,17 @@ def run_autosignal(
             except Exception as error:
                 for seed in seeds:
                     for variant in ("graphsage_random", "graphsage_trained"):
-                        _add_failed_scoring_suite(
-                            payload,
-                            representation_method=variant,
-                            method_prefix=variant,
-                            hypothesis=name,
-                            scorer_seeds=seeds,
-                            representation_seed=seed,
-                            error=error,
-                        )
+                        if variant in active_representations:
+                            _add_failed_scoring_suite(
+                                payload,
+                                representation_method=variant,
+                                method_prefix=variant,
+                                hypothesis=name,
+                                scorer_seeds=seeds,
+                                representation_seed=seed,
+                                error=error,
+                                scorer_allowlist=active_scorers,
+                            )
                 completed_stages += seed_count
                 continue
 
@@ -3443,12 +3631,15 @@ def run_autosignal(
                         row_matrix,
                         seed=seed,
                         epochs=graph_epochs,
+                        patience=graph_patience,
                     )
                     training_seconds = time.perf_counter() - training_started
                     for variant, primary_embeddings in (
                         ("graphsage_random", random_primary),
                         ("graphsage_trained", trained_primary),
                     ):
+                        if variant not in active_representations:
+                            continue
                         session_matrix = _primary_to_session_representation(
                             primary_embeddings,
                             graph,
@@ -3474,6 +3665,7 @@ def run_autosignal(
                                     for index in range(latent_dimension)
                                 ]
                             ),
+                            scorer_allowlist=active_scorers,
                         )
                     payload.setdefault("training_diagnostics", []).append(
                         {
@@ -3486,18 +3678,25 @@ def run_autosignal(
                     )
                 except Exception as error:
                     for variant in ("graphsage_random", "graphsage_trained"):
-                        _add_failed_scoring_suite(
-                            payload,
-                            representation_method=variant,
-                            method_prefix=variant,
-                            hypothesis=name,
-                            scorer_seeds=seeds,
-                            representation_seed=seed,
-                            error=error,
-                        )
+                        if variant in active_representations:
+                            _add_failed_scoring_suite(
+                                payload,
+                                representation_method=variant,
+                                method_prefix=variant,
+                                hypothesis=name,
+                                scorer_seeds=seeds,
+                                representation_seed=seed,
+                                error=error,
+                                scorer_allowlist=active_scorers,
+                            )
                 completed_stages += 1
 
-        for feature_set in cfg["feature_sets"]:
+        for feature_set in (
+            active_feature_sets
+            if {"dominant_style_untrained", "dominant_style_trained"}
+            & active_representations
+            else []
+        ):
             name = feature_set["name"]
             columns = list(feature_set["columns"])
             try:
@@ -3508,15 +3707,16 @@ def run_autosignal(
                 for seed in seeds:
                     for variant in ("untrained", "trained"):
                         representation_method = f"dominant_style_{variant}"
-                        _add_failed_direct_method(
-                            payload,
-                            representation_method=representation_method,
-                            method=f"{representation_method}_reconstruction",
-                            hypothesis=name,
-                            representation_seed=seed,
-                            scorer="dominant_joint_reconstruction",
-                            error=error,
-                        )
+                        if representation_method in active_representations:
+                            _add_failed_direct_method(
+                                payload,
+                                representation_method=representation_method,
+                                method=f"{representation_method}_reconstruction",
+                                hypothesis=name,
+                                representation_seed=seed,
+                                scorer="dominant_joint_reconstruction",
+                                error=error,
+                            )
                     completed_stages += 1
                 continue
 
@@ -3532,10 +3732,13 @@ def run_autosignal(
                         row_matrix,
                         seed=seed,
                         epochs=graph_epochs,
+                        patience=graph_patience,
                     )
                     training_seconds = time.perf_counter() - training_started
                     for variant in ("untrained", "trained"):
                         representation_method = f"dominant_style_{variant}"
+                        if representation_method not in active_representations:
+                            continue
                         primary_embeddings = dominant_output[
                             f"{variant}_primary_embeddings"
                         ]
@@ -3657,15 +3860,16 @@ def run_autosignal(
                 except Exception as error:
                     for variant in ("untrained", "trained"):
                         representation_method = f"dominant_style_{variant}"
-                        _add_failed_direct_method(
-                            payload,
-                            representation_method=representation_method,
-                            method=f"{representation_method}_reconstruction",
-                            hypothesis=name,
-                            representation_seed=seed,
-                            scorer="dominant_joint_reconstruction",
-                            error=error,
-                        )
+                        if representation_method in active_representations:
+                            _add_failed_direct_method(
+                                payload,
+                                representation_method=representation_method,
+                                method=f"{representation_method}_reconstruction",
+                                hypothesis=name,
+                                representation_seed=seed,
+                                scorer="dominant_joint_reconstruction",
+                                error=error,
+                            )
                 completed_stages += 1
 
     _finalize_representation_stability(payload)

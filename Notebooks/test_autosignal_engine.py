@@ -14,9 +14,11 @@ from autosignal_engine import (
     ConfigValidationError,
     apply_matched_amplification,
     build_session_knn_operator,
+    build_typed_graph,
     compute_signal_diagnostic_channels,
     pick_signal_regime,
     run_autosignal,
+    sessionize,
     validate_config,
 )
 from autosignal_analysis import (
@@ -158,7 +160,82 @@ def single_feature_config():
     return config
 
 
+def row_flow_config():
+    return {
+        "timestamp_col": None,
+        "existing_session_id_col": None,
+        "session_group_cols": [],
+        "graph_relations": [
+            {
+                "relation_name": "accesses_port",
+                "source_node_type": "flow",
+                "source_column": "$row_id",
+                "target_node_type": "port",
+                "target_column": "destination_port",
+                "directed": True,
+                "meaning": "Observed destination port access.",
+            }
+        ],
+        "label_col": "is_attack",
+        "malicious_label_values": [1],
+        "selected_columns": [
+            {"column": "bytes", "type": "numeric", "reason": "Flow volume."},
+            {"column": "duration", "type": "numeric", "reason": "Flow duration."},
+        ],
+        "feature_sets": [
+            {
+                "name": "Flow behavior",
+                "columns": ["bytes", "duration"],
+                "rationale": "Volume and duration.",
+            }
+        ],
+    }
+
+
+def row_flow_telemetry(rows=24):
+    return pd.DataFrame(
+        {
+            "destination_port": [80, 443, 53] * (rows // 3),
+            "bytes": np.linspace(10.0, 1000.0, rows),
+            "duration": np.linspace(0.1, 4.0, rows),
+            "is_attack": [int(index in {4, 17}) for index in range(rows)],
+        }
+    )
+
+
 class AutoSignalEngineTests(unittest.TestCase):
+    def test_row_id_relation_keeps_flow_as_primary_node(self):
+        frame = row_flow_telemetry()
+        config = validate_config(row_flow_config(), frame)
+        sessionized, sessions, _ = sessionize(frame, config)
+        graph = build_typed_graph(sessionized, config)
+
+        self.assertEqual(graph.primary_node_type, "flow")
+        self.assertEqual(graph.primary_id_column, "$row_id")
+        self.assertEqual(graph.manifest["observed_primary_nodes"], len(frame))
+        self.assertEqual(len(np.unique(graph.row_primary_index)), len(frame))
+        self.assertEqual(len(sessions), len(frame))
+
+    def test_allowlists_skip_unrequested_battery(self):
+        result = run_autosignal(
+            renamed_telemetry(36),
+            renamed_config(),
+            k=3,
+            seeds=(42,),
+            graph_epochs=1,
+            signal_permutations=99,
+            include_coordinates=False,
+            include_signal=False,
+            representation_allowlist=("raw_session",),
+            scorer_allowlist=("isolation_forest",),
+            feature_hypothesis_allowlist=("Resource profile",),
+        )
+        methods = pd.DataFrame(result["method_results"])
+        self.assertEqual(set(methods["representation"]), {"raw_session"})
+        self.assertEqual(set(methods["scorer"]), {"isolation_forest"})
+        self.assertEqual(set(methods["hypothesis"]), {"Resource profile"})
+        self.assertIsNone(result["graph_manifest"])
+
     def test_graph_construction_failure_declares_every_planned_outcome(self):
         df = renamed_telemetry(48)
         with patch(

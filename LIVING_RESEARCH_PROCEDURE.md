@@ -7,9 +7,9 @@ what remains exploratory, and why each experiment exists.
 
 **Current phase:** Phase 7 - prepare evidence-backed final figures and report
 
-**Immediate objective:** Present the completed Phase 4/5 evidence without
-opening any sealed confirmation partition. No configuration reached Recommend,
-so Phase 6 is not activated under the frozen rule.
+**Immediate objective:** Present the completed Lean v2 development/selection
+evidence and its context-dependent control results. No configuration reached
+Recommend, so no sealed confirmation partition is opened.
 
 > This is a living document. Update the status tables and current decisions in
 > place. Preserve the decision log at the end. Do not append competing roadmaps.
@@ -113,6 +113,7 @@ Use these rules whenever the project changes:
 | DOMINANT-style attributed graph method | Implemented | Tests anomaly-oriented joint attribute/structure reconstruction |
 | CoLA-style contrastive graph method | Deferred; gate not activated | Would test node–neighborhood incompatibility if a future context-sampler gate passes |
 | Exact final experiment matrix | Frozen | [`experiments/phase3/matrix_v1.json`](experiments/phase3/matrix_v1.json), SHA-256 `c56ca6f3cc5d…` |
+| Lean repeatable evaluation | Completed | [`experiments/lean_v2/matrix_v2_lean.json`](experiments/lean_v2/matrix_v2_lean.json); staged selection, four controls per dataset, 157 method rows |
 | Untouched confirmation run | Not started | Runs once after all choices are frozen |
 
 ## 5. Method suite and the question each method answers
@@ -359,7 +360,7 @@ All confirmation partitions remain sealed.
 
 ### Phase 4 — Execute the frozen experiments
 
-**Status:** Current
+**Status:** Completed; the full matrix is retained as historical broad evidence
 
 - Run all declared combinations.
 - Cache representations and scores where scientifically safe.
@@ -397,7 +398,7 @@ every missing row has a documented failure reason.
 
 ### Phase 5 — Statistical analysis and outcome assignment
 
-**Status:** Pending
+**Status:** Completed for the full matrix and Lean v2
 
 - Use paired comparisons because methods score the same sessions.
 - Report uncertainty for AP and Recall@K differences.
@@ -420,7 +421,7 @@ uncertainty/control evidence.
 
 ### Phase 6 — Untouched confirmation
 
-**Status:** Pending
+**Status:** Not activated; confirmation remains sealed
 
 - Freeze the selected configuration and decision rule.
 - Run it once on the untouched confirmation partition.
@@ -431,7 +432,7 @@ uncertainty/control evidence.
 
 ### Phase 7 — Presentation and paper artifacts
 
-**Status:** Pending
+**Status:** Current
 
 Build the presentation around one causal story:
 
@@ -458,19 +459,27 @@ Priority visuals:
 **Exit condition:** Every displayed number matches a saved result artifact, all
 preliminary evidence is labelled, and limitations are explicit.
 
-## 7. Current interpretation of preliminary evidence
+## 7. Current interpretation of completed evidence
 
-These observations motivate experiments; they are not final claims:
+The Lean v2 development/selection run supports these bounded findings:
 
-- Trained GraphSAGE has often tied or only negligibly exceeded random
-  GraphSAGE.
-- Significant intermediate-scale organization was observed for one Node2Vec
-  result, but its matched pocket score severely harmed malicious retrieval.
-- Some UMAP views suggest coherent malicious populations, while kNN rankings
-  remain weak.
-- Signal transforms have frequently been useless or harmful in manual runs.
+- No candidate beat every control across all three datasets. Trained GraphSAGE
+  was below its random control on ACME and UNSW and only +0.0002 AP on CIC.
+- Development-selected observed relations remained directionally above their
+  matched permutations on all three selection partitions, but none survived
+  the four-test Holm family with a positive 95% interval.
+- Trained DOMINANT beat its untrained control significantly on ACME (+0.0046
+  AP; Holm p = 0.0045), but it retrieved no malicious ACME session in the first
+  100 reviews and therefore remained Explore rather than Recommend.
+- Signal tracing consistently found neighborhood-supported score geometry for
+  both trained graph methods, every seed, and every dataset. The matched
+  transform changed median AP only trivially and usually negatively; detectable
+  organization was not equivalent to improved malicious retrieval.
+- The CIC flow-to-port graph is now correctly scored at the flow review-unit
+  level. Its structural-statistics scorer explicitly degenerated because every
+  one-edge flow has the same structural pattern; Node2Vec remained evaluable.
 
-The correct hypotheses are therefore:
+The resulting hypotheses and interpretation boundaries remain:
 
 - a representation may contain recoverable information that kNN discards;
 - an anomaly-oriented graph objective may outperform generic link
@@ -483,7 +492,7 @@ The correct hypotheses are therefore:
 
 | ID | Task | Status | Evidence/exit artifact |
 |---|---|---|---|
-| P0.1 | Preserve current engine behavior and tests | Implemented | 14-test engine regression suite passes on 2026-08-03 |
+| P0.1 | Preserve current engine behavior and tests | Implemented | 17 engine tests and 25 focused/compatibility tests pass on 2026-08-04 |
 | P1.1 | Implement full-space neighbor-purity evaluation | Implemented | Deterministic permutation-reference unit test |
 | P1.2 | Implement label silhouette with validity guards | Implemented | Full-space evaluator unit test; undefined values serialize as `null` |
 | P1.3 | Implement cross-validated linear probe | Implemented | Stratified out-of-fold development probe; grouped/temporal probe remains a stated limitation |
@@ -498,8 +507,10 @@ The correct hypotheses are therefore:
 | P5.1 | Run paired statistical analysis | Completed | [`experiments/phase5/results/analysis_v1/comparisons.csv`](experiments/phase5/results/analysis_v1/comparisons.csv) |
 | P5.2 | Assign Recommend/Explore/Abstain outcomes | Completed | 0 Recommend, 104 Explore, 54 Abstain; [`outcomes.csv`](experiments/phase5/results/analysis_v1/outcomes.csv) |
 | P5.3 | Select evidence-backed case studies | Completed | [`case_study_manifest.csv`](experiments/phase5/results/analysis_v1/case_study_manifest.csv) |
+| P4.2 | Execute bounded Lean v2 matrix | Completed | 30 cases, 157 method rows, 0 failures; [`execution_summary.csv`](experiments/lean_v2/results/autosignal_lean_v2_001/execution_summary.csv) |
+| P5.4 | Run Lean v2 four-control inference | Completed | 12 paired comparisons; [`comparisons.csv`](experiments/lean_v2/results/autosignal_lean_v2_001/comparisons.csv) |
 | P6.1 | Run untouched confirmation once | Not activated | No Recommend configuration; confirmation labels remain sealed |
-| P7.1 | Generate final figures | Pending | Validated figure directory |
+| P7.1 | Generate final figures | Completed | [`experiments/lean_v2/results/autosignal_lean_v2_001/figures`](experiments/lean_v2/results/autosignal_lean_v2_001/figures) |
 | P7.2 | Assemble and verify presentation | Pending | Final deck/export |
 
 ## 9. Run-manifest minimum fields
@@ -729,3 +740,38 @@ artifact_paths
 - The intrinsic outcome table is intentionally smaller than the complete
   outcome table because matched transforms are supporting configurations. The
   complete machine-readable result remains in Phase 5 `outcomes.csv`.
+
+### 2026-08-04 — Lean v2 evaluation completed
+
+- Added [`experiments/lean_v2/matrix_v2_lean.json`](experiments/lean_v2/matrix_v2_lean.json)
+  as a versioned successor for a bounded, repeatable development/selection
+  evaluation. It does not modify the historical Phase 3 matrix or open any
+  confirmation partition.
+- Fixed the highest-priority CIC graph error: a `$row_id` source endpoint now
+  remains the primary `flow` review unit rather than incorrectly scoring the
+  lower-cardinality destination-port nodes.
+- Added engine allowlists for representations, common scorers, and feature
+  hypotheses plus neural early stopping. Default engine calls retain the full
+  prior battery; Lean v2 can request only its predeclared subset.
+- Stage A used one development seed to select one raw feature/scorer and one
+  observed-versus-permuted simple relation graph per dataset. Stage B used
+  three seeds only for those choices plus trained/random GraphSAGE and
+  trained/untrained DOMINANT. The inference family is exactly four paired
+  comparisons per dataset, making the 2,000-draw Holm procedure attainable.
+- The complete run took 46 minutes 59 seconds and produced 30 cases and 157
+  method rows. Of these, 155 completed and two CIC structural-statistics rows
+  explicitly degenerated under the identical one-edge flow pattern; none
+  failed technically.
+- The only Holm-significant favorable AP difference was trained versus
+  untrained DOMINANT on ACME. It remained Explore because its top-100 precision
+  lift was zero. All other favorable differences had intervals crossing zero
+  after the declared clustered uncertainty analysis.
+- Signal tracing found the neighborhood-supported regime for all 18 trained
+  method/seed results, but the matched transform had negligible or negative
+  median AP change. This separates detectable score organization from useful
+  malicious retrieval.
+- Saved compact results, execution audit, signal summary, and presentation
+  figures under
+  [`experiments/lean_v2/results/autosignal_lean_v2_001`](experiments/lean_v2/results/autosignal_lean_v2_001).
+  Confirmation remains sealed because no comparison satisfied every Recommend
+  gate.
