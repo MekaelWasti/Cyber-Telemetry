@@ -730,6 +730,34 @@ class AutoSignalEngineTests(unittest.TestCase):
             )
         )
 
+    def test_batch_mode_omits_coordinates_and_limits_signal_scope(self):
+        result = run_autosignal(
+            renamed_telemetry(rows=48),
+            single_feature_config(),
+            k=3,
+            seeds=(42,),
+            graph_epochs=1,
+            signal_permutations=99,
+            include_coordinates=False,
+            signal_representation_allowlist=("raw_session",),
+        )
+
+        self.assertFalse(result["run_manifest"]["include_coordinates"])
+        self.assertEqual(result["run_manifest"]["coordinate_method"], None)
+        self.assertEqual(result["embeddings"], [])
+        self.assertGreater(len(result["session_scores"]), 0)
+        self.assertTrue(result["signal_results"])
+        self.assertEqual(
+            {row["representation"] for row in result["signal_results"]},
+            {"raw_session"},
+        )
+        self.assertFalse(
+            any(
+                row["stage"] == "coordinate_projection"
+                for row in result["runtime_diagnostics"]
+            )
+        )
+
     def test_configured_development_labels_do_not_change_label_free_outputs(self):
         df = renamed_telemetry(rows=48)
         config = single_feature_config()

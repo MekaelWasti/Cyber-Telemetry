@@ -5,10 +5,11 @@ what remains exploratory, and why each experiment exists.
 
 **Last updated:** 2026-08-03
 
-**Current phase:** Phase 3 — freeze the exact experiment matrix
+**Current phase:** Phase 4 — execute the frozen experiments
 
-**Immediate objective:** Convert the passed Phase 2 feasibility evidence into a
-versioned, immutable final matrix without reading the sealed holdout.
+**Immediate objective:** Execute and cache the six frozen
+development/selection partitions with the validated runner, without
+materializing any sealed confirmation sample or label.
 
 > This is a living document. Update the status tables and current decisions in
 > place. Preserve the decision log at the end. Do not append competing roadmaps.
@@ -111,7 +112,7 @@ Use these rules whenever the project changes:
 | Isolation Forest scorer | Implemented | Tests whether kNN is the wrong pointwise scorer |
 | DOMINANT-style attributed graph method | Implemented | Tests anomaly-oriented joint attribute/structure reconstruction |
 | CoLA-style contrastive graph method | Deferred; gate not activated | Would test node–neighborhood incompatibility if a future context-sampler gate passes |
-| Exact final experiment matrix | Not frozen | Defined after implementation and pilot validation |
+| Exact final experiment matrix | Frozen | [`experiments/phase3/matrix_v1.json`](experiments/phase3/matrix_v1.json), SHA-256 `c56ca6f3cc5d…` |
 | Untouched confirmation run | Not started | Runs once after all choices are frozen |
 
 ## 5. Method suite and the question each method answers
@@ -132,7 +133,7 @@ different possible source of success or failure.
 
 ### 5.2 Final scorer and evaluation additions
 
-These are implemented and now enter the bounded Phase 2 pilot.
+These are implemented and frozen in the Phase 3 matrix.
 
 #### Post-hoc representation evaluation
 
@@ -168,8 +169,8 @@ non-dominant coherent population, it assigns:
 Noise receives zero because isolated-point evidence is tested separately by
 kNN and Isolation Forest. The scorer abstains when HDBSCAN finds fewer than two
 coherent populations or when the largest cluster is less than 1.25 times the
-second largest. These defaults remain pilot settings until Phase 3 freezes the
-experiment. Do not create a broad cluster-algorithm search.
+second largest. Phase 3 freezes these defaults unchanged. Do not create a broad
+cluster-algorithm search.
 
 ### 5.3 Most important additions from the earlier five-method shortlist
 
@@ -324,7 +325,7 @@ other catalog configurations have no matching local data.
 
 ### Phase 3 — Freeze the exact experiment matrix
 
-**Status:** Current
+**Status:** Completed
 
 This is when the exact matrix—not merely its general shape—is frozen.
 
@@ -351,12 +352,14 @@ The matrix should be a set of valid combinations, not necessarily a blind
 Cartesian product. For example, DOMINANT consumes an attributed graph, whereas
 Isolation Forest can score any compatible session representation.
 
-**Exit condition:** A versioned, immutable experiment specification exists and
-no result has yet been inspected from the confirmation partition.
+**Exit condition:** Met. The versioned specification is
+[`experiments/phase3/matrix_v1.json`](experiments/phase3/matrix_v1.json), with
+SHA-256 `c56ca6f3cc5d794fc6da3b09dd273b5a07c461ceba1165017608bb559f190b68`.
+All confirmation partitions remain sealed.
 
 ### Phase 4 — Execute the frozen experiments
 
-**Status:** Pending
+**Status:** Current
 
 - Run all declared combinations.
 - Cache representations and scores where scientifically safe.
@@ -490,8 +493,8 @@ The correct hypotheses are therefore:
 | P1.7 | Implement DOMINANT adapter and controls | Implemented | Sparse heterogeneous trained/untrained paths, aligned component rows, integration test |
 | P2.1 | Run small correctness/feasibility pilot | Completed | [`experiments/phase2/results/pilot_v1/REPORT.md`](experiments/phase2/results/pilot_v1/REPORT.md); spec SHA-256 `5133edd044b3…` |
 | P2.2 | Decide CoLA through the declared gate | Completed — deferred | Gate was not activated; no label-blind context sampler is frozen or tested |
-| P3.1 | Write immutable final matrix specification | Pending | Versioned experiment manifest |
-| P4.1 | Execute and cache frozen matrix | Pending | Tidy result table + failure table |
+| P3.1 | Write immutable final matrix specification | Completed | [`experiments/phase3/matrix_v1.json`](experiments/phase3/matrix_v1.json), SHA-256 `c56ca6f3cc5d…` |
+| P4.1 | Execute and cache frozen matrix | Runner ready; execution pending | [`experiments/phase4/run_matrix.py`](experiments/phase4/run_matrix.py) + tidy result/failure tables |
 | P5.1 | Run paired statistical analysis | Pending | Comparison/uncertainty tables |
 | P5.2 | Assign Recommend/Explore/Abstain outcomes | Pending | Outcome table |
 | P5.3 | Select evidence-backed case studies | Pending | Case-study manifest |
@@ -648,3 +651,57 @@ artifact_paths
 - The sealed test parquet and combined train/test parquet were not used. Pilot
   retrieval metrics remain exploratory and were not interpreted for inclusion.
 - Phase 2 is complete for ACME; Phase 3 now freezes the exact final matrix.
+
+### 2026-08-03 — Phase 3 matrix v1 frozen
+
+- Froze [`experiments/phase3/matrix_v1.json`](experiments/phase3/matrix_v1.json)
+  with SHA-256
+  `c56ca6f3cc5d794fc6da3b09dd273b5a07c461ceba1165017608bb559f190b68`.
+  Any semantic change now requires a versioned successor rather than an edit.
+- The core datasets are ACME, UNSW-NB15, and CIC-IDS2017. LANL remains an
+  optional future extension and cannot block or change the core experiment.
+- Froze non-overlapping development, selection, and confirmation partitions:
+  a label-blind 70/30 time split of ACME train with ACME test sealed; UNSW raw
+  files 1–2/3/4; and CIC Monday–Wednesday/Thursday/Friday.
+- Capped each partition at 25,000 review units and 25,000 source rows using a
+  deterministic, label-blind SHA-256 sampling rule. ACME retains whole
+  canonical sessions under both caps; UNSW and CIC use flow rows. Confirmation
+  samples are not materialized early.
+- Froze all three agent-proposed feature hypotheses per dataset, stochastic
+  seeds 42/137/314, the existing representation and scorer battery, one
+  degree-sequence-preserving relation-target permutation null, and the single
+  label-blind matched signal transform.
+- The declared Phase 4 matrix has six development/selection partitions, 912
+  method rows, and 390 representation rows. HDBSCAN and technically impossible
+  graph-null cases retain explicit valid-abstention rows.
+- Froze paired cluster-bootstrap inference, Holm-Bonferroni correction within
+  dataset, practical Recall/Precision@K rules, and deterministic
+  Recommend/Explore/Abstain plus confirmation-selection rules.
+- Dataset configurations are frozen separately in
+  [`experiments/phase3/dataset_configs_v1.json`](experiments/phase3/dataset_configs_v1.json).
+  This corrects the UNSW raw header mapping and treats all declared CIC attack
+  labels as malicious instead of limiting CIC evaluation to Bot.
+- Phase 3 is complete. Phase 4 must execute this matrix without hyperparameter
+  retries, result-driven scope changes, or confirmation-label access.
+
+### 2026-08-03 — Phase 4 runner made intentionally narrow
+
+- Implemented [`experiments/phase4/run_matrix.py`](experiments/phase4/run_matrix.py)
+  as a resumable executor rather than a second experiment-definition layer.
+  It reads all scientific choices from the frozen matrix and rejects sealed
+  confirmation roles.
+- The primary human-facing result is one compact matrix digest grouped by
+  dataset, partition, feature hypothesis, representation, scorer, and graph
+  variant. Full per-review-unit scores remain supporting Parquet artifacts.
+- Disabled coordinate generation during matrix execution because Phase 2
+  showed it was the largest avoidable runtime and visual appearance cannot
+  select a result.
+- Limited label-blind signal diagnosis to the substantive observed
+  representations; random, untrained, and permuted controls remain controls
+  rather than generating redundant signal-transform branches.
+- Added a second 25,000-source-row cap. ACME therefore retains complete hashed
+  sessions without constructing a graph from all 467,836 development rows;
+  UNSW and CIC already use one flow row per review unit.
+- A 500-flow CIC smoke execution completed the observed and graph-null paths,
+  produced 58 method rows and 25 representation rows, and wrote the compact
+  digest with zero failures.

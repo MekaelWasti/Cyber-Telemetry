@@ -1,0 +1,455 @@
+{
+  "schema_version": "autosignal.phase3_experiment_matrix.v1",
+  "matrix_id": "autosignal_final_matrix_001",
+  "frozen_at_utc": "2026-08-03T23:52:00Z",
+  "checkpoint_commit": "85c2946114b85cdb538de00dbe931af5595fc199",
+  "status": "frozen_for_phase4_execution",
+  "scope": {
+    "core_datasets": [
+      "acme_process_telemetry",
+      "unsw_nb15_raw",
+      "cic_ids_2017_ml_csv"
+    ],
+    "optional_extensions": [
+      {
+        "dataset": "lanl_comprehensive_multi_source",
+        "status": "deferred",
+        "reason": "Download and adapter work must not block the frozen core study."
+      }
+    ],
+    "excluded_methods": {
+      "cola": "Gate not activated in Phase 2.",
+      "deep_svdd": "Lower marginal value than the selected scorer battery.",
+      "temporal_gnn": "Requires a separate temporal study and reliable histories."
+    }
+  },
+  "immutability": {
+    "overwrite_this_file": false,
+    "change_policy": "Any semantic change requires matrix_v2.json, a new matrix_id, a new hash, and a decision-log entry.",
+    "execution_must_record_matrix_sha256": true,
+    "confirmation_labels_must_remain_unread_until_phase6": true
+  },
+  "implementation_baseline": {
+    "engine": {
+      "path": "Notebooks/autosignal_engine.py",
+      "sha256": "7beb7d08936742294a910aca1edfdb381421531e737519fecae1196a28121927"
+    },
+    "analysis": {
+      "path": "Notebooks/autosignal_analysis.py",
+      "sha256": "aee5c90a85b0993dac4b03a5ed004c9b0a0e2ba4320d81a9909bdd5499551f02"
+    },
+    "dataset_configs": {
+      "path": "experiments/phase3/dataset_configs_v1.json",
+      "sha256": "99ad9e3bf0ffe30e9d91dbe6d1ec2fc59a15feec1fc37885f91c4d98e5c7d959"
+    },
+    "runner": {
+      "path": "experiments/phase4/run_matrix.py",
+      "sha256": "688582791acc5930a6cef1ce564474f5e4b4b06e0009cb12e931b9a6a8d41de2"
+    }
+  },
+  "partition_and_sampling_policy": {
+    "sampling_seed": 20260803,
+    "maximum_review_units_per_partition": 25000,
+    "maximum_source_rows_per_partition": 25000,
+    "uses_labels_for_partitioning_or_sampling": false,
+    "hash_algorithm": "sha256",
+    "hash_encoding": "UTF-8 JSON array with no whitespace",
+    "source_row_hash_fields": [
+      "matrix_id",
+      "dataset_id",
+      "partition_id",
+      "source_sha256",
+      "zero_based_source_row",
+      "sampling_seed"
+    ],
+    "session_hash_fields": [
+      "matrix_id",
+      "dataset_id",
+      "partition_id",
+      "source_sha256",
+      "canonical_session_id",
+      "sampling_seed"
+    ],
+    "selection_rule": "Sort ascending by digest and break ties by the unhashed row or session key. Network-flow partitions retain the first N rows. ACME greedily retains whole sessions in this order while both the review-unit and source-row caps remain satisfied; a session that would exceed the row cap is skipped.",
+    "multi_source_allocation": "Allocate floor(N/source_count) to each listed source; assign the remainder one at a time in listed source order.",
+    "graph_scope": "Construct the graph only from rows belonging to retained review units.",
+    "confirmation_sampling": "The same frozen algorithm is applied in Phase 6; confirmation indices and labels are not materialized earlier."
+  },
+  "datasets": [
+    {
+      "dataset_id": "acme_process_telemetry",
+      "display_name": "ACME process telemetry",
+      "config_id": "acme_process_telemetry",
+      "partitioning": {
+        "kind": "timestamp_cut_with_separate_confirmation_file",
+        "timestamp_column": "process_started",
+        "cutoff_utc": "2024-09-16T04:27:16.557008Z",
+        "cutoff_basis": "label-blind 70th percentile of non-null development-source timestamps",
+        "apply_partition_before_sessionization": true
+      },
+      "partitions": [
+        {
+          "partition_id": "acme_development",
+          "role": "development",
+          "sources": [
+            {
+              "path": "Data/train-process_uber_summary.parquet",
+              "bytes": 114639204,
+              "rows": 668337,
+              "sha256": "b5ca33e01d9447522a2ddd274edf6636ba44e0d3603a344983ed5035970be44c"
+            }
+          ],
+          "predicate": "process_started < 2024-09-16T04:27:16.557008Z",
+          "source_rows_after_predicate": 467836,
+          "sampling_unit": "canonical_session_after_partition_sessionization",
+          "maximum_review_units": 25000,
+          "labels_may_be_used_for_evaluation": true
+        },
+        {
+          "partition_id": "acme_selection",
+          "role": "selection",
+          "sources": [
+            {
+              "path": "Data/train-process_uber_summary.parquet",
+              "bytes": 114639204,
+              "rows": 668337,
+              "sha256": "b5ca33e01d9447522a2ddd274edf6636ba44e0d3603a344983ed5035970be44c"
+            }
+          ],
+          "predicate": "process_started >= 2024-09-16T04:27:16.557008Z",
+          "source_rows_after_predicate": 200501,
+          "sampling_unit": "canonical_session_after_partition_sessionization",
+          "maximum_review_units": 25000,
+          "labels_may_be_used_for_evaluation": true
+        },
+        {
+          "partition_id": "acme_confirmation",
+          "role": "sealed_confirmation",
+          "sources": [
+            {
+              "path": "Data/test-process_uber_summary.parquet",
+              "bytes": 191913502,
+              "rows": 1092559,
+              "sha256": "9d001f1ba7d5debda5cf4defd1770587140b223c09db206e76dbd454353e8649"
+            }
+          ],
+          "predicate": "all_rows",
+          "sampling_unit": "canonical_session_after_partition_sessionization",
+          "maximum_review_units": 25000,
+          "labels_may_be_used_for_evaluation": false,
+          "execute_in_phase": 6
+        }
+      ],
+      "inference_cluster": "hostname",
+      "probe_split": {
+        "kind": "forward_temporal_grouped",
+        "folds": 3,
+        "time_column": "process_started",
+        "group_column": "hostname",
+        "purge_minutes": 30
+      }
+    },
+    {
+      "dataset_id": "unsw_nb15_raw",
+      "display_name": "UNSW-NB15 raw flow files",
+      "config_id": "unsw_nb15_raw",
+      "partitioning": {
+        "kind": "non_overlapping_source_files",
+        "source_order_is_temporal": true,
+        "official_headered_training_and_testing_files_excluded": true,
+        "exclusion_reason": "They overlap the raw files and would contaminate a raw-file holdout."
+      },
+      "partitions": [
+        {
+          "partition_id": "unsw_development",
+          "role": "development",
+          "sources": [
+            {"path": "Data/data/UNSW_NB15/UNSW-NB15_1.csv", "bytes": 168979718, "rows": 700001, "sha256": "7d851bbeabd27894ce39c8e78835c73341fc946652fb7743b9eff193b55eb511"},
+            {"path": "Data/data/UNSW_NB15/UNSW-NB15_2.csv", "bytes": 165221021, "rows": 700001, "sha256": "6130ad02873cc6069ae695cf2844f2e8c2e9a9a1b7532dd82ab8f202757cacf8"}
+          ],
+          "sampling_unit": "source_row",
+          "maximum_review_units": 25000,
+          "labels_may_be_used_for_evaluation": true
+        },
+        {
+          "partition_id": "unsw_selection",
+          "role": "selection",
+          "sources": [
+            {"path": "Data/data/UNSW_NB15/UNSW-NB15_3.csv", "bytes": 154588103, "rows": 700001, "sha256": "ae990a96c3dfcd425ce2801aadb1727a34d5e0ae6d8215dbcdae60dedfaef640"}
+          ],
+          "sampling_unit": "source_row",
+          "maximum_review_units": 25000,
+          "labels_may_be_used_for_evaluation": true
+        },
+        {
+          "partition_id": "unsw_confirmation",
+          "role": "sealed_confirmation",
+          "sources": [
+            {"path": "Data/data/UNSW_NB15/UNSW-NB15_4.csv", "bytes": 97588754, "rows": 440044, "sha256": "cdf563692d51d405541dd659ddcdad9fa01f001f05fe9fc4b67f00ca12fbc96a"}
+          ],
+          "sampling_unit": "source_row",
+          "maximum_review_units": 25000,
+          "labels_may_be_used_for_evaluation": false,
+          "execute_in_phase": 6
+        }
+      ],
+      "inference_cluster": "srcip",
+      "probe_split": {
+        "kind": "forward_temporal_grouped",
+        "folds": 3,
+        "time_column": "Stime",
+        "group_column": "srcip",
+        "purge_seconds": 1800
+      }
+    },
+    {
+      "dataset_id": "cic_ids_2017_ml_csv",
+      "display_name": "CIC-IDS2017 machine-learning CSV files",
+      "config_id": "cic_ids_2017_ml_csv",
+      "partitioning": {
+        "kind": "non_overlapping_day_files",
+        "source_order_is_temporal": true,
+        "confirmation_attack_families_differ_from_selection": true
+      },
+      "partitions": [
+        {
+          "partition_id": "cic_development",
+          "role": "development",
+          "sources": [
+            {"path": "Data/data/CIC-IDS- 2017/Monday-WorkingHours.pcap_ISCX.csv", "bytes": 176927918, "rows": 529918, "sha256": "852c4beb34eda186f32561fa79df7a0747e92e1a6535b01270820dd9ffe17f34"},
+            {"path": "Data/data/CIC-IDS- 2017/Tuesday-WorkingHours.pcap_ISCX.csv", "bytes": 135078995, "rows": 445909, "sha256": "52b8692ae8c7d2ed04671fe2b98335693c0a92c7ab157d8c8b534d6523080851"},
+            {"path": "Data/data/CIC-IDS- 2017/Wednesday-workingHours.pcap_ISCX.csv", "bytes": 225166395, "rows": 692703, "sha256": "893c27dc968bf7a8adef1689f90be55ca4a4dc3088fb63d6ff247ac56856df2a"}
+          ],
+          "sampling_unit": "source_row",
+          "maximum_review_units": 25000,
+          "labels_may_be_used_for_evaluation": true
+        },
+        {
+          "partition_id": "cic_selection",
+          "role": "selection",
+          "sources": [
+            {"path": "Data/data/CIC-IDS- 2017/Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv", "bytes": 52023263, "rows": 170366, "sha256": "d67066211fb1689c78406f1506f4c44704ecb92088353d5c96d96d6474eb819d"},
+            {"path": "Data/data/CIC-IDS- 2017/Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv", "bytes": 83102436, "rows": 288602, "sha256": "6bcda3857c2504676034e3ea57762d38393cc734cb377a726bd5cb153961b1b5"}
+          ],
+          "sampling_unit": "source_row",
+          "maximum_review_units": 25000,
+          "labels_may_be_used_for_evaluation": true
+        },
+        {
+          "partition_id": "cic_confirmation",
+          "role": "sealed_confirmation",
+          "sources": [
+            {"path": "Data/data/CIC-IDS- 2017/Friday-WorkingHours-Morning.pcap_ISCX.csv", "bytes": 58316725, "rows": 191033, "sha256": "53a41c24d570ea83b7ac55b2e94df94e7a8216aeb80a2af0246b6bc8bb543000"},
+            {"path": "Data/data/CIC-IDS- 2017/Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv", "bytes": 76906168, "rows": 286467, "sha256": "ca1824c51bfbb7b3c72290a11be04366ba8815878c6a1cc5c44cb1cee269e99b"},
+            {"path": "Data/data/CIC-IDS- 2017/Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv", "bytes": 77123859, "rows": 225745, "sha256": "6ff1580f5f81c0ae28a26f7631721018577f5f7c5e0feac28b795fcfe7b411ee"}
+          ],
+          "sampling_unit": "source_row",
+          "maximum_review_units": 25000,
+          "labels_may_be_used_for_evaluation": false,
+          "execute_in_phase": 6
+        }
+      ],
+      "inference_cluster": "source_file",
+      "probe_split": {
+        "kind": "leave_one_source_file_out",
+        "minimum_folds": 2,
+        "group_column": "source_file"
+      }
+    }
+  ],
+  "execution_matrix": {
+    "execute_partition_roles_in_phase4": ["development", "selection"],
+    "stochastic_seeds": [42, 137, 314],
+    "random_baseline_seed": 42,
+    "graph_null_seed": 9001,
+    "feature_hypotheses": "all feature_sets declared by the matching frozen dataset config",
+    "relation_variants": [
+      {
+        "variant": "observed",
+        "applies_to": "all representations and methods"
+      },
+      {
+        "variant": "degree_sequence_preserving_target_permutation",
+        "applies_to": [
+          "typed_structural_stats",
+          "node2vec",
+          "graphsage_trained",
+          "dominant_style_trained"
+        ],
+        "algorithm": "Within each forward relation, permute the existing target endpoint vector. For attempts 0 through 15, derive a PCG64 seed from the first eight bytes, interpreted big-endian, of SHA-256 over the canonical JSON array [matrix_id,dataset_id,partition_id,relation_name,graph_null_seed,attempt]. This preserves source and target degree sequences and edge count. Retry only when every endpoint is unchanged; abstain when fewer than two distinct targets make permutation meaningless."
+      }
+    ],
+    "representations_and_scorers": [
+      {"representation": "random_score", "feature_scope": "none", "scorers": ["random"]},
+      {"representation": "raw_session", "feature_scope": "each_feature_hypothesis", "scorers": ["knn_mean_distance", "isolation_forest", "hdbscan_rare_cluster"]},
+      {"representation": "typed_structural_stats", "feature_scope": "none", "scorers": ["knn_mean_distance", "isolation_forest", "hdbscan_rare_cluster"]},
+      {"representation": "node2vec", "feature_scope": "none", "scorers": ["knn_mean_distance", "isolation_forest", "hdbscan_rare_cluster"]},
+      {"representation": "graphsage_random", "feature_scope": "each_feature_hypothesis", "scorers": ["knn_mean_distance", "isolation_forest", "hdbscan_rare_cluster"]},
+      {"representation": "graphsage_trained", "feature_scope": "each_feature_hypothesis", "scorers": ["knn_mean_distance", "isolation_forest", "hdbscan_rare_cluster"]},
+      {"representation": "dominant_style_untrained", "feature_scope": "each_feature_hypothesis", "scorers": ["joint_reconstruction_error"]},
+      {"representation": "dominant_style_trained", "feature_scope": "each_feature_hypothesis", "scorers": ["joint_reconstruction_error"]}
+    ],
+    "expected_rows_per_dataset_partition": {
+      "feature_hypothesis_count": 3,
+      "observed_method_rows": 102,
+      "graph_null_method_rows": 50,
+      "total_method_rows": 152,
+      "observed_representation_rows": 43,
+      "graph_null_representation_rows": 22,
+      "total_representation_rows": 65
+    },
+    "expected_phase4_totals": {
+      "dataset_partitions": 6,
+      "method_rows": 912,
+      "representation_rows": 390
+    }
+  },
+  "hyperparameters": {
+    "canonical_sessionization": {
+      "inactivity_minutes": 5,
+      "maximum_duration_minutes": 30,
+      "network_flow_datasets_use_one_row_per_review_unit": true
+    },
+    "standardization": "fit StandardScaler independently on each partition representation; no label input",
+    "knn_mean_distance": {"k": 15, "metric": "euclidean", "higher_is_more_anomalous": true},
+    "isolation_forest": {"n_estimators": 256, "max_samples": "min(256,n_review_units)", "contamination": "auto", "n_jobs": 1},
+    "hdbscan_rare_cluster": {
+      "min_cluster_size": 5,
+      "min_samples": null,
+      "metric": "euclidean",
+      "cluster_selection_method": "eom",
+      "allow_single_cluster": false,
+      "dominance_ratio": 1.25,
+      "noise_score": 0,
+      "formula": "-log(cluster_fraction) * centroid_separation / global_rms"
+    },
+    "node2vec": {"p": 1, "q": 1, "embedding_dim": 32, "walk_length": 10, "walks_per_node": 2, "context_window": 2, "epochs": 3, "max_pairs": 200000, "negative_samples": 2, "learning_rate": 0.02, "batch_size": 4096},
+    "graphsage": {"layers": 2, "hidden_dim": 32, "output_dim": 32, "dropout": 0.1, "epochs": 4, "learning_rate": 0.002, "maximum_positive_edges_per_relation": 3000, "negative_ratio": 1.0, "gradient_clip_norm": 1.0},
+    "dominant_style": {"layers": 2, "hidden_dim": 32, "output_dim": 32, "epochs": 4, "learning_rate": 0.002, "maximum_positive_edges_per_relation": 3000, "negative_ratio": 1.0, "attribute_alpha": 0.5, "gradient_clip_norm": 1.0},
+    "representation_evaluation": {"neighbor_k": 15, "label_permutations": 199, "linear_probe_c": 1.0, "linear_probe_max_iter": 1000},
+    "signal_localization": {"k": 15, "permutations": 199, "tail_fraction": 0.05, "minimum_tail_size": 10, "familywise_alpha": 0.05, "amplification_alpha": 0.5, "random_state": 42}
+  },
+  "signal_policy": {
+    "eligible_intrinsic_methods": [
+      "raw_session::*",
+      "typed_structural_stats::*",
+      "node2vec::*::observed",
+      "graphsage_trained::*::observed",
+      "dominant_style_trained::*::observed"
+    ],
+    "ineligible_controls": ["random_score", "graphsage_random", "dominant_style_untrained", "*::graph_null"],
+    "selection_is_label_blind": true,
+    "at_most_one_transform_per_intrinsic_score": true,
+    "no_passing_regime_action": "return the intrinsic score unchanged",
+    "evaluation": "Always retain and compare both intrinsic and matched score; never replace the intrinsic record."
+  },
+  "evaluation": {
+    "primary_ranking_metric": "average_precision",
+    "analyst_budgets": [25, 50, 100, 250],
+    "ranking_metrics": [
+      "average_precision",
+      "recall_at_k",
+      "precision_at_k",
+      "malicious_found_at_k",
+      "reviews_to_first_malicious",
+      "prevalence",
+      "precision_lift_over_prevalence"
+    ],
+    "representation_metrics": [
+      "malicious_neighbor_purity",
+      "neighbor_purity_lift",
+      "neighbor_purity_max_statistic_permutation_p",
+      "label_silhouette",
+      "grouped_or_forward_temporal_linear_probe_average_precision",
+      "distance_rank_correlation_across_seeds",
+      "neighbor_jaccard_across_seeds"
+    ],
+    "undefined_metric_policy": "Serialize as null with a reason; never coerce to zero.",
+    "visualization_policy": "UMAP and case-study coordinates are generated only after outcome assignment and cannot select methods, features, partitions, or examples."
+  },
+  "planned_comparisons": {
+    "unit": "the same retained review units within one dataset partition and feature hypothesis where applicable",
+    "primary_families_per_dataset": [
+      "raw Isolation Forest versus raw kNN",
+      "raw HDBSCAN population score versus raw kNN",
+      "trained GraphSAGE kNN versus raw kNN",
+      "trained GraphSAGE kNN versus random GraphSAGE kNN",
+      "trained DOMINANT-style joint error versus untrained joint error",
+      "observed trained GraphSAGE versus its relation-permuted counterpart",
+      "observed Node2Vec versus its relation-permuted counterpart",
+      "matched amplification versus its own intrinsic score"
+    ],
+    "seed_aggregation": "median metric within configuration before cross-configuration comparison",
+    "uncertainty": {
+      "method": "paired cluster bootstrap",
+      "replicates": 2000,
+      "confidence_level": 0.95,
+      "random_state": 424242,
+      "cluster_keys": {
+        "acme_process_telemetry": "hostname",
+        "unsw_nb15_raw": "srcip",
+        "cic_ids_2017_ml_csv": "source_file"
+      }
+    },
+    "multiple_comparisons": {
+      "method": "Holm-Bonferroni",
+      "alpha": 0.05,
+      "family": "all instantiated primary comparisons within one dataset",
+      "cross_dataset_claim": "A method-family portability claim requires the same favorable direction in at least two datasets and no statistically supported reversal."
+    }
+  },
+  "outcome_rules": {
+    "technical_validity": [
+      "All required seeds complete with aligned finite scores, or a predeclared valid abstention is recorded.",
+      "No label is used in feature construction, graph construction, model fitting, signal-regime selection, or sampling.",
+      "Failures remain explicit rows and are never silently dropped or retuned."
+    ],
+    "recommend": [
+      "Selection average precision exceeds the random-score reference with a positive 95% paired-bootstrap interval and Holm-adjusted p <= 0.05.",
+      "Median precision lift over prevalence at K=100 is at least 2.0.",
+      "Median top-100 Jaccard across stochastic seeds is at least 0.50 when the method is stochastic.",
+      "A graph method also beats its applicable random, untrained, or relation-permuted control under the same adjusted-alpha family."
+    ],
+    "explore": "Technically valid and above random in direction, but missing at least one utility, stability, or control requirement.",
+    "abstain": "Technically invalid, contains no evaluable positives, or does not exceed the random reference in the favorable direction.",
+    "confirmation_selection": "For each dataset, confirm only a Recommend configuration. Choose maximum median selection AP, then maximum Recall@100, then minimum runtime, then lexical method key. If no configuration is Recommend, do not read that dataset's confirmation labels.",
+    "confirmation_success": "The frozen selected configuration must retain AP above prevalence, precision lift at K=100 >= 2.0, and a positive AP difference from its applicable control. Report failure without revision otherwise."
+  },
+  "failure_and_abstention_policy": {
+    "hdbscan_fewer_than_two_clusters": "valid_abstention",
+    "hdbscan_no_dominant_reference_population": "valid_abstention",
+    "fewer_than_two_distinct_relation_targets_for_null": "valid_graph_null_abstention",
+    "zero_positive_review_units": "evaluation_unavailable; preserve scores and diagnostics",
+    "non_finite_or_misaligned_output": "hard_failure",
+    "out_of_memory_or_timeout": "hard_failure; do not change the matrix; optimize caching or execution mechanics only",
+    "automatic_hyperparameter_retry": false
+  },
+  "artifact_contract": {
+    "root": "artifacts/final_matrix/autosignal_final_matrix_001",
+    "tracked_summary_root": "experiments/phase4/results/autosignal_final_matrix_001",
+    "cache_representations": true,
+    "cache_scores": true,
+    "cache_coordinates_during_phase4": false,
+    "required_tables": [
+      "run_manifest",
+      "method_results",
+      "representation_results",
+      "representation_stability",
+      "scorer_diagnostics",
+      "score_components",
+      "signal_results",
+      "runtime_diagnostics",
+      "failure_table"
+    ],
+    "required_provenance": [
+      "matrix_sha256",
+      "git_commit",
+      "working_tree_state",
+      "dataset_source_sha256",
+      "dataset_config_sha256",
+      "software_environment",
+      "sampling_keys_sha256",
+      "payload_sha256"
+    ]
+  }
+}

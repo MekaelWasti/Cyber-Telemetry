@@ -1353,17 +1353,7 @@ def _add_method_artifacts(
     )
     metric_row["method_key"] = key
     payload["method_results"].append(metric_row)
-    if coordinates is None:
-        coordinates = _embedding_2d(values)
-    coordinates = np.asarray(coordinates, dtype=float)
-    if coordinates.shape != (len(values), 2) or not np.isfinite(
-        coordinates
-    ).all():
-        raise ValueError("Representation coordinates are not aligned and finite.")
-
-    for session_id, (score, coordinate) in enumerate(
-        zip(score_values, coordinates)
-    ):
+    for session_id, score in enumerate(score_values):
         label = str(labels[session_id]) if labels is not None else "unknown"
         payload["session_scores"].append(
             {
@@ -1381,28 +1371,54 @@ def _add_method_artifacts(
                 "label": label,
             }
         )
-        payload["embeddings"].append(
-            {
-                "method_key": key,
-                "method": method,
-                "hypothesis": hypothesis,
-                "seed": seed,
-                "representation_key": representation_key,
-                "representation": representation_method,
-                "scorer": scorer,
-                "representation_seed": representation_seed,
-                "scorer_seed": scorer_seed,
-                "session_id": int(session_id),
-                "x": float(coordinate[0]),
-                "y": float(coordinate[1]),
-                "label": label,
-            }
-        )
+
+    if payload["run_manifest"].get("include_coordinates", True):
+        if coordinates is None:
+            coordinates = _embedding_2d(values)
+        coordinates = np.asarray(coordinates, dtype=float)
+        if coordinates.shape != (len(values), 2) or not np.isfinite(
+            coordinates
+        ).all():
+            raise ValueError(
+                "Representation coordinates are not aligned and finite."
+            )
+        for session_id, coordinate in enumerate(coordinates):
+            label = (
+                str(labels[session_id]) if labels is not None else "unknown"
+            )
+            payload["embeddings"].append(
+                {
+                    "method_key": key,
+                    "method": method,
+                    "hypothesis": hypothesis,
+                    "seed": seed,
+                    "representation_key": representation_key,
+                    "representation": representation_method,
+                    "scorer": scorer,
+                    "representation_seed": representation_seed,
+                    "scorer_seed": scorer_seed,
+                    "session_id": int(session_id),
+                    "x": float(coordinate[0]),
+                    "y": float(coordinate[1]),
+                    "label": label,
+                }
+            )
 
     # A random score baseline is not a representation-plus-kNN method. Building
     # a graph from its one-dimensional random scores would manufacture
     # neighborhood support, so it is deliberately excluded from diagnosis.
-    if method == "random_baseline" or not signal_eligible:
+    signal_allowlist = payload["run_manifest"].get(
+        "signal_representation_allowlist"
+    )
+    if (
+        method == "random_baseline"
+        or not signal_eligible
+        or not payload["run_manifest"].get("include_signal", True)
+        or (
+            signal_allowlist is not None
+            and representation_method not in signal_allowlist
+        )
+    ):
         return
 
     try:
@@ -1910,16 +1926,18 @@ def _add_scoring_suite(
         labels=labels,
         dimension_names=dimension_names,
     )
-    coordinate_started = time.perf_counter()
-    coordinates = _embedding_2d(values)
-    _record_runtime(
-        payload,
-        stage="coordinate_projection",
-        seconds=time.perf_counter() - coordinate_started,
-        representation=representation_method,
-        hypothesis=hypothesis,
-        representation_seed=representation_seed,
-    )
+    coordinates = None
+    if payload["run_manifest"].get("include_coordinates", True):
+        coordinate_started = time.perf_counter()
+        coordinates = _embedding_2d(values)
+        _record_runtime(
+            payload,
+            stage="coordinate_projection",
+            seconds=time.perf_counter() - coordinate_started,
+            representation=representation_method,
+            hypothesis=hypothesis,
+            representation_seed=representation_seed,
+        )
 
     scorer_started = time.perf_counter()
     knn_scores = knn_anomaly_scores(values, k=k)
@@ -3063,6 +3081,9 @@ def run_autosignal(
     seeds: tuple[int, ...] = (SEED,),
     graph_epochs: int = DEFAULT_GRAPH_EPOCHS,
     signal_permutations: int = DEFAULT_SIGNAL_PERMUTATIONS,
+    include_coordinates: bool = True,
+    include_signal: bool = True,
+    signal_representation_allowlist: tuple[str, ...] | None = None,
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> dict[str, Any]:
     """Run the complete aligned representation/scorer battery."""
@@ -3149,7 +3170,14 @@ def run_autosignal(
             "rows": int(len(sessionized_df)),
             "sessions": int(len(sessions)),
             "mode": "development" if labels is not None else "score_only",
-            "coordinate_method": "UMAP",
+            "coordinate_method": "UMAP" if include_coordinates else None,
+            "include_coordinates": bool(include_coordinates),
+            "include_signal": bool(include_signal),
+            "signal_representation_allowlist": (
+                list(signal_representation_allowlist)
+                if signal_representation_allowlist is not None
+                else None
+            ),
             "k": int(k),
             "seeds": [int(seed) for seed in seeds],
             "graph_epochs": int(graph_epochs),
@@ -3551,7 +3579,11 @@ def run_autosignal(
                                 ]
                             ),
                         )
-                        coordinates = _embedding_2d(session_matrix)
+                        coordinates = (
+                            _embedding_2d(session_matrix)
+                            if include_coordinates
+                            else None
+                        )
                         method = f"{representation_method}_reconstruction"
                         _add_method_artifacts(
                             payload,
