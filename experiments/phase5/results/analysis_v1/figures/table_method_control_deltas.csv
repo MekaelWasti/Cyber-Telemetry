@@ -1,0 +1,25 @@
+comparison,dataset,delta_ap
+DOMINANT trained − untrained,ACME,0.003528288691218134
+DOMINANT trained − untrained,CIC-IDS2017,0.0012836267811487034
+DOMINANT trained − untrained,UNSW-NB15,0.11386431954575116
+GraphSAGE observed − permuted,ACME,0.004001774524615864
+GraphSAGE observed − permuted,CIC-IDS2017,-0.0004328868608751771
+GraphSAGE observed − permuted,UNSW-NB15,0.0
+GraphSAGE kNN − raw kNN,ACME,0.01055872661772677
+GraphSAGE kNN − raw kNN,CIC-IDS2017,0.0
+GraphSAGE kNN − raw kNN,UNSW-NB15,-0.04579549593579452
+GraphSAGE trained − random,ACME,-0.0007172438323795084
+GraphSAGE trained − random,CIC-IDS2017,0.0
+GraphSAGE trained − random,UNSW-NB15,0.0
+Signal transform − intrinsic,ACME,-0.0005357845353950331
+Signal transform − intrinsic,CIC-IDS2017,0.0
+Signal transform − intrinsic,UNSW-NB15,-0.0009202620044518328
+Node2Vec observed − permuted,ACME,0.0
+Node2Vec observed − permuted,CIC-IDS2017,0.01343956570212975
+Node2Vec observed − permuted,UNSW-NB15,0.010722703567783015
+Raw HDBSCAN − raw kNN,ACME,0.001036018997184046
+Raw HDBSCAN − raw kNN,CIC-IDS2017,0.012068115092787931
+Raw HDBSCAN − raw kNN,UNSW-NB15,-0.06792630463410632
+Raw Isolation Forest − raw kNN,ACME,0.0009916189527840015
+Raw Isolation Forest − raw kNN,CIC-IDS2017,0.009291743336710376
+Raw Isolation Forest − raw kNN,UNSW-NB15,-0.04719753935026311

@@ -130,7 +130,7 @@ DATAMAP_RESIZE_JS = """
 
 st.set_page_config(
     page_title="AutoSignal",
-    page_icon="◉",
+    page_icon=":material/query_stats:",
     layout="wide",
 )
 
@@ -325,17 +325,18 @@ def static_datamap(
     return figure
 
 
-st.title("AutoSignal")
+st.title("AutoSignal", anchor=False)
 st.caption(
-    "Agent-guided schema adaptation and representation-level telemetry "
-    "signal localization"
+    "Turn telemetry into comparable behavioral hypotheses, graph relations, "
+    "and anomaly rankings."
 )
 
 with st.sidebar:
-    st.header("Run configuration")
-    source = st.radio(
+    st.header("Run analysis")
+    source = st.segmented_control(
         "Dataset source",
         ["Bundled ACME development data", "Upload dataset"],
+        default="Bundled ACME development data",
     )
     upload = None
     if source == "Upload dataset":
@@ -352,52 +353,53 @@ with st.sidebar:
         step=100,
         help="A focused slice keeps the interactive baseline run responsive.",
     )
-    k = st.slider("k for anomaly scoring", 3, 30, 15)
-    graph_epochs = st.slider(
-        "GraphSAGE epochs",
-        min_value=1,
-        max_value=8,
-        value=4,
-    )
-    signal_permutations = st.select_slider(
-        "Signal-null permutations",
-        options=[99, 199, 499, 999],
-        value=199,
-        help=(
-            "Permutation count used by each representation's label-blind "
-            "signal-regime diagnosis. Use 999 for a final development run."
-        ),
-    )
+
+    with st.expander("Advanced run settings", icon=":material/tune:"):
+        k = st.slider("Neighbors for anomaly scoring", 3, 30, 15)
+        graph_epochs = st.slider(
+            "GraphSAGE epochs",
+            min_value=1,
+            max_value=8,
+            value=4,
+        )
+        signal_permutations = st.select_slider(
+            "Signal-null permutations",
+            options=[99, 199, 499, 999],
+            value=199,
+            help=(
+                "Permutation count used by each representation's label-blind "
+                "signal-regime diagnosis. Use 999 for a final development run."
+            ),
+        )
+
+    with st.expander("Agent schema configuration", icon=":material/schema:"):
+        config_upload = st.file_uploader(
+            "Upload JSON configuration",
+            type=["json"],
+            key="config_upload",
+        )
+        initial_config = (
+            config_upload.getvalue().decode("utf-8")
+            if config_upload is not None
+            else default_config_text()
+        )
+        config_text = st.text_area(
+            "Validated agent output",
+            value=initial_config,
+            height=280,
+            help=(
+                "AutoSignal validates every selected column and relation "
+                "before execution."
+            ),
+        )
+
     run_button = st.button(
         "Run AutoSignal",
+        icon=":material/play_arrow:",
         type="primary",
         width="stretch",
     )
     pipeline_progress = st.empty()
-
-st.subheader("Agent configuration")
-config_textfield = st.text_area(
-    "Optional JSON configuration snippet",
-)
-config_upload = st.file_uploader(
-    "Optional JSON configuration file",
-    type=["json"],
-    key="config_upload",
-)
-initial_config = (
-    config_upload.getvalue().decode("utf-8")
-    if config_upload is not None
-    else default_config_text()
-)
-config_text = st.text_area(
-    "Validated agent output",
-    value=initial_config,
-    height=320,
-    help=(
-        "Paste the schema agent's JSON here. AutoSignal validates every "
-        "column and relation before execution."
-    ),
-)
 
 if run_button:
     progress_bar = pipeline_progress.progress(
@@ -489,35 +491,35 @@ score_components = pd.DataFrame(result.get("score_components", []))
 dominant_diagnostics = result.get("dominant_diagnostics", [])
 
 st.subheader(st.session_state.get("autosignal_dataset_name", "Telemetry dataset"))
-summary_columns = st.columns(5)
-summary_columns[0].metric("Rows", f"{run_manifest['rows']:,}")
-summary_columns[1].metric("Sessions", f"{run_manifest['sessions']:,}")
-summary_columns[2].metric(
-    "Graph nodes",
-    f"{sum(graph_manifest.get('node_counts', {}).values()):,}",
+st.caption(
+    "Development run · labels are used only to evaluate the resulting rankings."
 )
-summary_columns[3].metric(
-    "Graph edges",
-    f"{graph_manifest.get('total_forward_edges', 0):,}",
-)
-summary_columns[4].metric(
-    "Completed methods",
-    f"{len(completed_results):,}",
-)
+with st.container(horizontal=True):
+    st.metric("Rows", f"{run_manifest['rows']:,}", border=True)
+    st.metric("Review sessions", f"{run_manifest['sessions']:,}", border=True)
+    st.metric(
+        "Typed relations",
+        f"{len(result['config'].get('graph_relations', [])):,}",
+        border=True,
+    )
+    st.metric("Completed methods", f"{len(completed_results):,}", border=True)
 
 tabs = st.tabs(
     [
-        "Method comparison",
-        "Representations",
-        "Signal diagnosis",
-        "Top sessions",
-        "Configuration",
-        "Diagnostics",
+        ":material/leaderboard: Results",
+        ":material/hub: Session map",
+        ":material/radar: Signal tracing",
+        ":material/format_list_numbered: Ranked sessions",
+        ":material/science: Research details",
     ]
 )
 
 with tabs[0]:
-    st.subheader("Representation-family comparison")
+    st.subheader("What rose to the top")
+    st.caption(
+        "Use the shortlist for presentation and triage. The complete method "
+        "matrix remains available below."
+    )
     metric_columns = [
         "display_name",
         "representation",
@@ -535,116 +537,147 @@ with tabs[0]:
     available_columns = [
         column for column in metric_columns if column in completed_results
     ]
-    st.dataframe(
-        completed_results[available_columns],
-        width="stretch",
-        hide_index=True,
-    )
+    ranked_results = completed_results.sort_values(
+        ["average_precision", "recall_at_100"],
+        ascending=False,
+        na_position="last",
+    ).reset_index(drop=True)
+    ranked_results.insert(0, "rank", np.arange(1, len(ranked_results) + 1))
 
-    chart_values = completed_results[
-        ["display_name", "average_precision", "recall_at_100"]
-    ].dropna(subset=["average_precision"])
-    if not chart_values.empty:
-        st.caption(
-            "Development labels are used only for evaluation; larger values are better."
-        )
-        st.bar_chart(
-            chart_values.set_index("display_name"),
-            horizontal=True,
-            height=max(360, 34 * len(chart_values)),
-        )
-
-    if not failed_results.empty:
-        with st.expander("Failed or skipped methods", expanded=True):
-            st.dataframe(failed_results, width="stretch", hide_index=True)
-
-    st.subheader("Full-space representation checks")
-    st.caption(
-        "Development-only diagnostics computed on the original representation "
-        "X, never on UMAP. They test whether information is present before an "
-        "unsupervised scorer converts X into a ranking."
-    )
-    if representation_results.empty:
-        st.info("This payload predates full-space representation evaluation.")
+    if ranked_results.empty:
+        st.info("No completed methods are available in this result payload.")
     else:
-        representation_columns = [
-            "representation",
-            "hypothesis",
-            "representation_seed",
-            "n_sessions",
-            "n_dimensions",
-            "malicious_neighbor_purity",
-            "neighbor_purity_prevalence_reference",
-            "neighbor_purity_lift",
-            "neighbor_purity_permutation_p",
-            "label_silhouette",
-            "linear_probe_average_precision",
-            "status",
-            "reason",
+        best = ranked_results.iloc[0]
+        with st.container(horizontal=True):
+            st.metric(
+                "Best average precision",
+                f"{float(best['average_precision']):.3f}",
+                border=True,
+            )
+            st.metric(
+                "Recall in first 100",
+                (
+                    f"{float(best['recall_at_100']):.1%}"
+                    if pd.notna(best.get("recall_at_100"))
+                    else "—"
+                ),
+                border=True,
+            )
+            st.metric(
+                "Reviews to first malicious",
+                (
+                    f"{int(best['reviews_to_first_malicious']):,}"
+                    if pd.notna(best.get("reviews_to_first_malicious"))
+                    else "—"
+                ),
+                border=True,
+            )
+        st.markdown(f"**Leading configuration:** {best['display_name']}")
+
+        shortlist_columns = [
+            "rank",
+            "display_name",
+            "average_precision",
+            "recall_at_100",
+            "reviews_to_first_malicious",
         ]
         st.dataframe(
-            representation_results[
-                [
-                    column
-                    for column in representation_columns
-                    if column in representation_results
-                ]
-            ],
+            ranked_results[shortlist_columns].head(10),
             width="stretch",
             hide_index=True,
             column_config={
-                "malicious_neighbor_purity": st.column_config.NumberColumn(
-                    "Malicious-neighbor purity", format="%.3f"
+                "rank": st.column_config.NumberColumn("Rank", format="%d"),
+                "display_name": "Configuration",
+                "average_precision": st.column_config.NumberColumn(
+                    "Average precision", format="%.3f"
                 ),
-                "neighbor_purity_prevalence_reference": (
-                    st.column_config.NumberColumn(
-                        "Purity reference", format="%.3f"
-                    )
+                "recall_at_100": st.column_config.NumberColumn(
+                    "Recall@100", format="%.1%"
                 ),
-                "neighbor_purity_lift": st.column_config.NumberColumn(
-                    "Purity lift", format="%+.3f"
-                ),
-                "neighbor_purity_permutation_p": (
-                    st.column_config.NumberColumn(
-                        "Purity permutation p", format="%.4f"
-                    )
-                ),
-                "label_silhouette": st.column_config.NumberColumn(
-                    "Label silhouette", format="%+.3f"
-                ),
-                "linear_probe_average_precision": (
-                    st.column_config.NumberColumn(
-                        "Linear-probe AP", format="%.3f"
-                    )
+                "reviews_to_first_malicious": st.column_config.NumberColumn(
+                    "Reviews to first malicious", format="%d"
                 ),
             },
         )
-        if not representation_stability.empty:
-            with st.expander("Cross-seed representation stability"):
-                stability_columns = [
-                    "representation",
-                    "hypothesis",
-                    "first_seed",
-                    "second_seed",
-                    "distance_rank_correlation",
-                    "mean_neighbor_jaccard",
-                    "status",
-                    "reason",
-                ]
+
+        chart_metric = st.segmented_control(
+            "Compare the shortlist by",
+            ["Average precision", "Recall@100"],
+            default="Average precision",
+        )
+        chart_column = (
+            "average_precision"
+            if chart_metric == "Average precision"
+            else "recall_at_100"
+        )
+        chart_values = ranked_results[["display_name", chart_column]].dropna()
+        chart_values = chart_values.nlargest(10, chart_column).set_index(
+            "display_name"
+        )
+        if not chart_values.empty:
+            st.bar_chart(chart_values, horizontal=True, height=420)
+
+    with st.expander("Complete method matrix", icon=":material/table_chart:"):
+        st.dataframe(
+            ranked_results[["rank", *available_columns]],
+            width="stretch",
+            hide_index=True,
+        )
+
+    with st.expander(
+        "Representation quality and stability",
+        icon=":material/monitoring:",
+    ):
+        st.caption(
+            "These development-only checks use the original representation, "
+            "not its two-dimensional UMAP projection."
+        )
+        if representation_results.empty:
+            st.info("This payload predates full-space representation evaluation.")
+        else:
+            representation_columns = [
+                "representation",
+                "hypothesis",
+                "representation_seed",
+                "n_sessions",
+                "n_dimensions",
+                "malicious_neighbor_purity",
+                "neighbor_purity_prevalence_reference",
+                "neighbor_purity_lift",
+                "neighbor_purity_permutation_p",
+                "label_silhouette",
+                "linear_probe_average_precision",
+                "status",
+                "reason",
+            ]
+            st.dataframe(
+                representation_results[
+                    [
+                        column
+                        for column in representation_columns
+                        if column in representation_results
+                    ]
+                ],
+                width="stretch",
+                hide_index=True,
+            )
+            if not representation_stability.empty:
+                st.markdown("**Cross-seed stability**")
                 st.dataframe(
-                    representation_stability[
-                        [
-                            column
-                            for column in stability_columns
-                            if column in representation_stability
-                        ]
-                    ],
+                    representation_stability,
                     width="stretch",
                     hide_index=True,
                 )
 
+    if not failed_results.empty:
+        with st.expander(
+            "Failed or skipped methods",
+            icon=":material/warning:",
+        ):
+            st.dataframe(failed_results, width="stretch", hide_index=True)
+
 with tabs[1]:
-    st.subheader("Session representation")
+    st.subheader("Explore a session representation")
     map_controls = st.columns([2, 1, 1])
     with map_controls[0]:
         selected_method_key = st.selectbox(
@@ -654,10 +687,10 @@ with tabs[1]:
             key="embedding_method",
         )
     with map_controls[1]:
-        map_view = st.radio(
+        map_view = st.segmented_control(
             "View",
             ["Interactive", "Static"],
-            horizontal=True,
+            default="Interactive",
             key="embedding_view",
         )
     with map_controls[2]:
@@ -705,7 +738,7 @@ with tabs[1]:
                 labels,
                 plot_title,
             )
-        st.iframe(map_html, width="stretch", height=760)
+        st.iframe(map_html, width="stretch", height=620)
     else:
         from matplotlib import pyplot as plt
 
@@ -725,19 +758,19 @@ with tabs[1]:
     )
 
 with tabs[2]:
-    st.subheader("Signal-regime diagnosis")
+    st.subheader("Trace how anomaly signal is organized")
     st.caption(
         "Choose any completed representation or feature hypothesis. The picker "
         "tests score organization on that representation's full session matrix—not "
         "its 2D visualization—and never uses labels to select a regime."
     )
-    st.info(
-        "Cross-method browsing is exploratory. Family-wise p-values correct the "
-        "three regime hypotheses within the selected representation, not the act "
-        "of searching across many representations. For a confirmatory run, freeze "
-        "one representation first and count only its matched transform as the "
-        "single amplification test."
-    )
+    with st.expander("How to interpret this exploratory test", icon=":material/info:"):
+        st.write(
+            "Family-wise p-values correct the three regime hypotheses within "
+            "the selected representation, not browsing across representations. "
+            "For confirmation, freeze one representation first and treat only "
+            "its matched transform as the amplification test."
+        )
     signal_config = result.get("signal_config", {})
     if signal_config:
         st.caption(
@@ -866,20 +899,21 @@ with tabs[2]:
                 "familywise_p",
                 "passes",
             ]
-            st.dataframe(
-                evidence[evidence_columns].style.format(
-                    {
-                        "observed_statistic": "{:.3f}",
-                        "null_mean": "{:.3f}",
-                        "null_std": "{:.3f}",
-                        "effect_z": "{:.2f}",
-                        "raw_p": "{:.4f}",
-                        "familywise_p": "{:.4f}",
-                    }
-                ),
-                width="stretch",
-                hide_index=True,
-            )
+            with st.expander("Regime evidence", icon=":material/table_chart:"):
+                st.dataframe(
+                    evidence[evidence_columns].style.format(
+                        {
+                            "observed_statistic": "{:.3f}",
+                            "null_mean": "{:.3f}",
+                            "null_std": "{:.3f}",
+                            "effect_z": "{:.2f}",
+                            "raw_p": "{:.4f}",
+                            "familywise_p": "{:.4f}",
+                        }
+                    ),
+                    width="stretch",
+                    hide_index=True,
+                )
 
             selected_signal_scores = signal_scores[
                 signal_scores["method_key"].eq(selected_signal_key)
@@ -924,10 +958,10 @@ with tabs[2]:
                     key="signal_channel",
                 )
             with map_controls[1]:
-                signal_map_view = st.radio(
+                signal_map_view = st.segmented_control(
                     "View",
                     ["Interactive", "Static"],
-                    horizontal=True,
+                    default="Interactive",
                     key="signal_map_view",
                 )
             with map_controls[2]:
@@ -967,7 +1001,7 @@ with tabs[2]:
                         None,
                         signal_title,
                     )
-                st.iframe(signal_map_html, width="stretch", height=760)
+                st.iframe(signal_map_html, width="stretch", height=620)
             else:
                 from matplotlib import pyplot as plt
 
@@ -1213,84 +1247,95 @@ with tabs[3]:
 
 with tabs[4]:
     config = result["config"]
-    st.subheader("Feature hypotheses")
-    for feature_set in config["feature_sets"]:
-        with st.expander(feature_set["name"], expanded=True):
-            st.write(feature_set.get("rationale", ""))
-            st.code(", ".join(feature_set["columns"]))
-
-    st.subheader("Typed graph relations")
-    st.dataframe(
-        pd.DataFrame(config["graph_relations"]),
-        width="stretch",
-        hide_index=True,
+    st.subheader("Research details")
+    st.caption(
+        "Configuration, provenance, and model diagnostics are retained here "
+        "for reproducibility without crowding the presentation views."
     )
-    st.subheader("Dataset preview")
-    st.dataframe(
-        st.session_state["autosignal_preview"],
-        width="stretch",
-        hide_index=True,
-    )
-
-with tabs[5]:
-    left, right = st.columns(2)
-    with left:
-        st.subheader("Session manifest")
-        st.json(session_manifest)
-        st.subheader("Graph manifest")
-        st.json(graph_manifest)
-    with right:
-        st.subheader("Feature preprocessing")
-        st.json(result.get("feature_diagnostics", {}))
-        st.subheader("Dataset profile")
-        st.json(st.session_state.get("autosignal_profile", {}), expanded=False)
-
-    st.subheader("Scorer diagnostics")
-    if scorer_diagnostics.empty:
-        st.info("No scorer diagnostics are present in this payload.")
-    else:
-        scorer_columns = [
-            "representation",
-            "scorer",
-            "hypothesis",
-            "representation_seed",
-            "scorer_seed",
-            "status",
-            "reason",
-            "effective_clusters",
-            "noise_sessions",
-            "dominant_to_second_ratio",
-            "n_estimators",
-            "max_samples",
-        ]
-        st.dataframe(
-            scorer_diagnostics[
-                [
-                    column
-                    for column in scorer_columns
-                    if column in scorer_diagnostics
-                ]
-            ],
-            width="stretch",
-            hide_index=True,
-        )
-
-    st.subheader("DOMINANT-style training diagnostics")
-    if dominant_diagnostics:
-        st.json(dominant_diagnostics, expanded=False)
-        st.caption(
-            "This is a sparse heterogeneous adaptation: telemetry attributes "
-            "are reconstructed only for primary nodes, while typed relations "
-            "use sampled positive and negative edges. Secondary-node inputs "
-            "remain constant and are not treated as attribute evidence."
-        )
-    else:
-        st.info("No DOMINANT-style diagnostics are present in this payload.")
-
     export = json.dumps(result, indent=2, allow_nan=False)
     st.download_button(
         "Download result payload",
+        icon=":material/download:",
         data=export,
         file_name="autosignal_result.json",
         mime="application/json",
     )
+
+    with st.expander(
+        "Behavioral hypotheses and typed relations",
+        icon=":material/account_tree:",
+    ):
+        for feature_set in config["feature_sets"]:
+            with st.container(border=True):
+                st.markdown(f"**{feature_set['name']}**")
+                st.caption(feature_set.get("rationale", ""))
+                st.code(", ".join(feature_set["columns"]))
+        st.markdown("**Typed graph relations**")
+        st.dataframe(
+            pd.DataFrame(config["graph_relations"]),
+            width="stretch",
+            hide_index=True,
+        )
+
+    with st.expander("Dataset preview", icon=":material/preview:"):
+        st.dataframe(
+            st.session_state["autosignal_preview"],
+            width="stretch",
+            hide_index=True,
+        )
+
+    with st.expander("Run manifests and preprocessing", icon=":material/receipt_long:"):
+        left, right = st.columns(2)
+        with left:
+            st.markdown("**Session manifest**")
+            st.json(session_manifest, expanded=False)
+            st.markdown("**Graph manifest**")
+            st.json(graph_manifest, expanded=False)
+        with right:
+            st.markdown("**Feature preprocessing**")
+            st.json(result.get("feature_diagnostics", {}), expanded=False)
+            st.markdown("**Dataset profile**")
+            st.json(
+                st.session_state.get("autosignal_profile", {}),
+                expanded=False,
+            )
+
+    with st.expander("Scorer and training diagnostics", icon=":material/build:"):
+        if scorer_diagnostics.empty:
+            st.info("No scorer diagnostics are present in this payload.")
+        else:
+            scorer_columns = [
+                "representation",
+                "scorer",
+                "hypothesis",
+                "representation_seed",
+                "scorer_seed",
+                "status",
+                "reason",
+                "effective_clusters",
+                "noise_sessions",
+                "dominant_to_second_ratio",
+                "n_estimators",
+                "max_samples",
+            ]
+            st.dataframe(
+                scorer_diagnostics[
+                    [
+                        column
+                        for column in scorer_columns
+                        if column in scorer_diagnostics
+                    ]
+                ],
+                width="stretch",
+                hide_index=True,
+            )
+
+        st.markdown("**DOMINANT-style training diagnostics**")
+        if dominant_diagnostics:
+            st.json(dominant_diagnostics, expanded=False)
+            st.caption(
+                "Telemetry attributes are reconstructed only for primary nodes; "
+                "typed relations use sampled positive and negative edges."
+            )
+        else:
+            st.info("No DOMINANT-style diagnostics are present in this payload.")

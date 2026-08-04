@@ -1,0 +1,4 @@
+dataset,score_kind,representation,scorer,hypothesis,outcome,median_average_precision,median_recall_at_100,median_precision_at_100,prevalence,precision_lift_at_100
+ACME,matched,graphsage_trained,isolation_forest,Local State Modification and Data Access,Explore,0.0497613621080104,0.6666666666666666,0.02,0.0036407766990291,5.493333333333333
+CIC-IDS2017,intrinsic,raw_session,isolation_forest,Network Flow Volume and Throughput,Explore,0.0372597018595377,0.0,0.0,0.00604,0.0
+UNSW-NB15,intrinsic,dominant_style_trained,dominant_joint_reconstruction,Historical Connection Frequency Context,Explore,0.5844716542789932,0.0,0.0,0.22784,0.0
