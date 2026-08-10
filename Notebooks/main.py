@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 import streamlit as st
 
 HERE = Path(__file__).resolve().parent
@@ -156,6 +157,22 @@ st.markdown(
 @st.cache_data(show_spinner=False)
 def load_bundled_dataset(path: str, rows: int) -> pd.DataFrame:
     return load_df_slice(path, rows)
+
+
+@st.cache_data(show_spinner=False)
+def bundled_dataset_row_count(path: str) -> int:
+    return int(pq.ParquetFile(path).metadata.num_rows)
+
+
+@st.cache_data(show_spinner=False)
+def uploaded_dataset_row_count(content: bytes, filename: str) -> int:
+    suffix = Path(filename).suffix.lower()
+    buffer = io.BytesIO(content)
+    if suffix == ".csv":
+        return int(len(pd.read_csv(buffer, low_memory=False)))
+    if suffix in {".parquet", ".pq"}:
+        return int(pq.ParquetFile(buffer).metadata.num_rows)
+    raise ValueError("Upload a CSV or Parquet dataset.")
 
 
 @st.cache_data(show_spinner=False)
@@ -345,14 +362,44 @@ with st.sidebar:
             type=["csv", "parquet", "pq"],
         )
 
-    rows = st.slider(
-        "Rows in development slice",
-        min_value=300,
-        max_value=5_000,
-        value=1_000,
-        step=100,
-        help="A focused slice keeps the interactive baseline run responsive.",
+    if source == "Bundled ACME development data":
+        total_rows = bundled_dataset_row_count(str(DEFAULT_DATASET))
+    elif upload is not None:
+        total_rows = uploaded_dataset_row_count(
+            upload.getvalue(),
+            upload.name,
+        )
+    else:
+        total_rows = None
+
+    use_all_rows = st.checkbox(
+        "Use entire dataset",
+        value=False,
+        disabled=total_rows is None,
     )
+
+    if use_all_rows:
+        rows = 0
+        st.caption(f"All {total_rows:,} rows will be loaded.")
+    elif total_rows is None:
+        rows = 0
+        st.caption("Upload a dataset to choose the development slice size.")
+    elif total_rows <= 1:
+        rows = total_rows
+        st.caption(f"The dataset contains {total_rows:,} row.")
+    else:
+        minimum_rows = 300 if total_rows >= 300 else 1
+        rows = st.slider(
+            "Rows in development slice",
+            min_value=minimum_rows,
+            max_value=total_rows,
+            value=min(1_000, total_rows),
+            step=min(100, max(1, total_rows - minimum_rows)),
+            help=(
+                "The selected number of rows is taken from the end of the "
+                f"dataset. The complete dataset contains {total_rows:,} rows."
+            ),
+        )
 
     with st.expander("Advanced run settings", icon=":material/tune:"):
         k = st.slider("Neighbors for anomaly scoring", 3, 30, 15)
@@ -548,10 +595,46 @@ with tabs[0]:
         st.info("No completed methods are available in this result payload.")
     else:
         best = ranked_results.iloc[0]
+        labeled_sessions = sessions[sessions["label"].ne("unknown")]
+        malicious_prevalence = (
+            float(labeled_sessions["label"].eq("malicious").mean())
+            if not labeled_sessions.empty
+            else None
+        )
+        best_average_precision = best.get("average_precision")
+        ap_lift_over_prevalence = (
+            float(best_average_precision) / malicious_prevalence
+            if pd.notna(best_average_precision)
+            and malicious_prevalence is not None
+            and malicious_prevalence > 0
+            else None
+        )
         with st.container(horizontal=True):
             st.metric(
                 "Best average precision",
-                f"{float(best['average_precision']):.3f}",
+                (
+                    f"{float(best_average_precision):.3f}"
+                    if pd.notna(best_average_precision)
+                    else "—"
+                ),
+                border=True,
+            )
+            st.metric(
+                "Malicious prevalence",
+                (
+                    f"{malicious_prevalence:.2%}"
+                    if malicious_prevalence is not None
+                    else "—"
+                ),
+                border=True,
+            )
+            st.metric(
+                "AP lift over prevalence",
+                (
+                    f"{ap_lift_over_prevalence:.1f}×"
+                    if ap_lift_over_prevalence is not None
+                    else "—"
+                ),
                 border=True,
             )
             st.metric(
@@ -572,6 +655,10 @@ with tabs[0]:
                 ),
                 border=True,
             )
+        st.caption(
+            "For a random ranking, expected average precision is approximately "
+            "the malicious prevalence. AP lift reports their ratio."
+        )
         st.markdown(f"**Leading configuration:** {best['display_name']}")
 
         shortlist_columns = [

@@ -1,3 +1,227 @@
+
+
+
+August 4th
+
+
+That feedback gives you a very clear priority: the project is now presentation-first and methodology-first. The engine is sufficiently developed. Code changes should be limited to essential correctness, reproducibility, and communication issues.
+
+The talk’s central claim should be:
+
+> Cybersecurity telemetry does not have one universal representation, graph, or anomaly detector. AutoSignal provides a controlled methodology for constructing, comparing, diagnosing, and verifying candidate approaches across datasets—while preserving negative results and allowing the system to abstain.
+
+The results support that claim; they are not the claim themselves.
+
+## Recommended 20-minute structure
+
+I would target roughly 12 slides.
+
+### 1. The practical problem — 1 minute
+
+Explain cybersecurity telemetry from zero:
+
+```text
+A network produces millions of records describing processes,
+connections, users, machines, files, and other activity.
+
+An analyst cannot inspect all of them.
+The task is to create a useful review queue.
+```
+
+Avoid beginning with GraphSAGE, HDBSCAN, or AP.
+
+### 2. Why this is difficult — 1.5 minutes
+
+Explain that datasets describe behavior differently:
+
+```text
+Process dataset → users, hosts, processes, files
+Network dataset → flows, IPs, ports, protocols
+Authentication dataset → accounts, machines, login events
+```
+
+Then introduce the fundamental problem:
+
+> A method that works for one behavioral structure may fail when the review units, features, relationships, or attack behavior change.
+
+### 3. The conventional research pattern — 1 minute
+
+```text
+Choose one dataset
+→ choose one representation
+→ try several detectors
+→ report the strongest result
+```
+
+Explain gently that this makes it difficult to distinguish genuine methodological success from dataset-specific compatibility.
+
+### 4. The AutoSignal idea — 1 minute
+
+Present the one-line system flow:
+
+```text
+Telemetry
+→ review units
+→ typed relationships
+→ representations
+→ anomaly scorers
+→ controls
+→ diagnosis
+→ evidence-backed decision
+```
+
+This is the main overview slide.
+
+### 5. Step 1: Translate telemetry into mathematical objects — 2 minutes
+
+Handhold the audience through:
+
+- what a telemetry row is;
+- what a review unit is;
+- why a flow may remain one unit;
+- why process events may become sessions;
+- how entities and observed relationships form a heterogeneous PyTorch Geometric graph.
+
+This is where your information card belongs.
+
+### 6. Step 2: Describe behavior in different ways — 2 minutes
+
+Explain representations as different mathematical views of the same review units:
+
+```text
+Raw features      → measured behavior
+Graph statistics  → explicit structural roles
+Node2Vec           → topology from random-walk neighborhoods
+GraphSAGE          → features combined with graph neighborhoods
+DOMINANT-style     → attribute-and-structure reconstruction
+```
+
+The point is not to teach every model. It is:
+
+> Different representations expose different kinds of behavior.
+
+### 7. Step 3: Turn representations into review queues — 1.5 minutes
+
+Explain the scorer cross-product:
+
+```text
+Representation × Scorer → Ranked review queue
+```
+
+Use the simple distinctions:
+
+- kNN: far from nearby points;
+- Isolation Forest: individually easy to isolate;
+- HDBSCAN: part of a rare coherent population;
+- reconstruction: difficult for the model to explain.
+
+This slide makes the comprehensive comparison contribution concrete.
+
+### 8. Step 4: Test whether apparent success is real — 2 minutes
+
+Explain controls without excessive statistics:
+
+- random ranking asks whether it beats chance;
+- untrained models ask whether learning added value;
+- permuted relations ask whether real telemetry structure matters;
+- multiple seeds ask whether the answer is stable;
+- multiple datasets ask whether it travels.
+
+This is a load-bearing methodology slide.
+
+### 9. Step 5: Diagnose the score geometry — 2 minutes
+
+Introduce the separate similarity graph carefully:
+
+```text
+Telemetry graph = observed behavioral relationships
+Similarity graph = nearby review units in one representation
+```
+
+Then explain the three regimes:
+
+- neighborhood-supported;
+- locally contrastive;
+- intermediate-scale.
+
+The mathematical audience may appreciate \(s\), \(Ps\), and \(P^2s\), but only after the concepts are verbally established.
+
+### 10. What happened — 2 minutes
+
+Use one compact visual, not a wall of metrics:
+
+```text
+No method prevailed across every dataset and control.
+
+Some methods found useful global outliers.
+Some exposed coherent populations.
+Some graph models failed to beat untrained controls.
+Some strong global rankings failed within the first 100 reviews.
+Signal organization did not guarantee useful amplification.
+```
+
+A small dataset × method-family heatmap would communicate this better than detailed result tables.
+
+Show perhaps three carefully selected numbers only:
+
+- number of datasets;
+- number of evaluated configurations;
+- number reaching `Recommend`: zero.
+
+The last number supports the system’s capacity to abstain.
+
+### 11. What the result means — 1.5 minutes
+
+This is the contribution slide:
+
+> No universal winner appeared—but the system made that conclusion visible, controlled, and reproducible.
+
+Then:
+
+```text
+If no method works:
+the system records and explains the failure.
+
+If different methods work on different datasets:
+the system identifies the conditions.
+
+If one method eventually survives everything:
+the system provides the procedure for finding and verifying it.
+```
+
+### 12. Conclusion and next step — 1.5 minutes
+
+End with:
+
+```text
+Detect structure
+→ digest the evidence
+→ propose one behaviorally justified method
+→ test it once against a declared control
+```
+
+Present agent-generated method development as the natural next stage, not as functionality you must finish before this talk.
+
+## What to change now
+
+Essential work only:
+
+- Reconcile the missing Lean v2 artifacts referenced by the living procedure.
+- Verify every number that will appear in the presentation.
+- Produce one concise cross-dataset “no universal winner” table or figure.
+- Improve terminology and textual explanations in presentation-facing outputs.
+- Clearly distinguish telemetry graphs, similarity graphs, representations, and scorers.
+- Preserve the sealed confirmation boundary.
+
+Do not spend time adding more model families, broad hyperparameter searches, or substantial UI functionality before the talk.
+
+The next concrete deliverable should be a slide-by-slide narrative document containing the title, one-sentence purpose, visual, and spoken takeaway for every slide. Once that narrative is stable, creating the actual slides will be much easier and the presentation will stay centered on the meta-methodology.
+
+
+Benoit specified that COMMUNICATIOn is the most important thing to the TIMC audience. They are mathematicians and need their handheld. Showing results is not the most imporant thing. The biggest thing in the contribution is that it compares methods across different relations and etc and does cross product between suites to have this comprehensive sort of analysis to show that different behaviours show differently across different methods and no one method conquers all. And if you did get a method that did, then here is the way to find it, test it, verify it. But he said handhold the audience with the cyber and technical terms cause they won't know the background. And don't flash result numbers, focus very much on the methodology which is a meta methodology style of contribution
+
+
+
 July 30th 2026
 
 datasets being used
