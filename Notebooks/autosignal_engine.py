@@ -181,13 +181,19 @@ class GraphBundle:
 
 
 def load_df_slice(path: str | Path, rows: int | None = None) -> pd.DataFrame:
-    """Load a CSV or Parquet file without applying dataset-specific semantics."""
+    """Load a CSV, Parquet, or JSON file without dataset-specific semantics."""
     path = Path(path)
     suffix = path.suffix.lower()
     if suffix == ".csv":
         df = pd.read_csv(path, low_memory=False)
     elif suffix in {".parquet", ".pq"}:
         df = pd.read_parquet(path)
+    elif suffix in {".json", ".jsonl", ".ndjson"}:
+        try:
+            df = pd.read_json(path)
+        except ValueError:
+            # Accept newline-delimited telemetry as well as JSON arrays/objects.
+            df = pd.read_json(path, lines=True)
     else:
         raise ValueError(f"Unsupported dataset type: {suffix or '<none>'}")
 

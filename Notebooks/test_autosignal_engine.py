@@ -1,5 +1,6 @@
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -16,6 +17,7 @@ from autosignal_engine import (
     build_session_knn_operator,
     build_typed_graph,
     compute_signal_diagnostic_channels,
+    load_df_slice,
     pick_signal_regime,
     run_autosignal,
     sessionize,
@@ -204,6 +206,28 @@ def row_flow_telemetry(rows=24):
 
 
 class AutoSignalEngineTests(unittest.TestCase):
+    def test_load_df_slice_accepts_json_records_and_json_lines(self):
+        records = [
+            {"event_ts": "2026-01-01T00:00:00Z", "value": 1},
+            {"event_ts": "2026-01-01T00:01:00Z", "value": 2},
+            {"event_ts": "2026-01-01T00:02:00Z", "value": 3},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            json_path = root / "telemetry.json"
+            jsonl_path = root / "telemetry.jsonl"
+            json_path.write_text(json.dumps(records), encoding="utf-8")
+            jsonl_path.write_text(
+                "\n".join(json.dumps(record) for record in records),
+                encoding="utf-8",
+            )
+
+            ordinary = load_df_slice(json_path, rows=2)
+            line_delimited = load_df_slice(jsonl_path)
+
+        self.assertEqual(ordinary["value"].tolist(), [2, 3])
+        self.assertEqual(line_delimited["value"].tolist(), [1, 2, 3])
+
     def test_row_id_relation_keeps_flow_as_primary_node(self):
         frame = row_flow_telemetry()
         config = validate_config(row_flow_config(), frame)

@@ -172,7 +172,18 @@ def uploaded_dataset_row_count(content: bytes, filename: str) -> int:
         return int(len(pd.read_csv(buffer, low_memory=False)))
     if suffix in {".parquet", ".pq"}:
         return int(pq.ParquetFile(buffer).metadata.num_rows)
-    raise ValueError("Upload a CSV or Parquet dataset.")
+    if suffix in {".json", ".jsonl", ".ndjson"}:
+        return int(len(_read_uploaded_json(buffer)))
+    raise ValueError("Upload a CSV, Parquet, or JSON dataset.")
+
+
+def _read_uploaded_json(buffer: io.BytesIO) -> pd.DataFrame:
+    """Read either conventional JSON or newline-delimited JSON records."""
+    try:
+        return pd.read_json(buffer)
+    except ValueError:
+        buffer.seek(0)
+        return pd.read_json(buffer, lines=True)
 
 
 @st.cache_data(show_spinner=False)
@@ -187,8 +198,10 @@ def load_uploaded_dataset(
         df = pd.read_csv(buffer, low_memory=False)
     elif suffix in {".parquet", ".pq"}:
         df = pd.read_parquet(buffer)
+    elif suffix in {".json", ".jsonl", ".ndjson"}:
+        df = _read_uploaded_json(buffer)
     else:
-        raise ValueError("Upload a CSV or Parquet dataset.")
+        raise ValueError("Upload a CSV, Parquet, or JSON dataset.")
     if rows and len(df) > rows:
         df = df.tail(rows)
     return df.reset_index(drop=True)
@@ -359,7 +372,7 @@ with st.sidebar:
     if source == "Upload dataset":
         upload = st.file_uploader(
             "Telemetry dataset",
-            type=["csv", "parquet", "pq"],
+            type=["csv", "parquet", "pq", "json", "jsonl", "ndjson"],
         )
 
     if source == "Bundled ACME development data":
